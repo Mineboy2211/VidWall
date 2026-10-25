@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>VidWall</title>
+<style>
+  :root {
+    --bg: #0b0d1a; --card: rgba(255,255,255,.045); --card-b: rgba(255,255,255,.08);
+    --text: #eef0ff; --muted: #8f96c4; --accent: #7c8cff; --accent2: #5ee1ff; --danger: #ff6b8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--text);
+    background: radial-gradient(1200px 700px at 15% -10%, #1d2457 0%, transparent 60%),
+                radial-gradient(900px 600px at 110% 110%, #14324a 0%, transparent 55%), var(--bg);
+    overflow: hidden; user-select: none; -webkit-user-select: none;
+  }
+  button { font-family: inherit; }
+  .app { display: grid; grid-template-columns: 1fr 330px; gap: 18px; height: 100%; padding: 18px 20px 20px; }
+  .main { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+
+  header { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; flex: 0 0 auto;
+          background: linear-gradient(135deg, #3a3f9e, #7c8cff); box-shadow: 0 6px 20px rgba(124,140,255,.35); }
+  .logo svg { width: 18px; height: 18px; }
+  h1 { font-size: 21px; margin: 0; font-weight: 700; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .pills { margin-left: auto; display: flex; gap: 8px; } .pills .pill { margin-left: 0; }
+  .pill { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 99px;
+          background: var(--card); border: 1px solid var(--card-b); font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 10px #4ade80; }
+  .dot.paused { background: #fbbf24; box-shadow: 0 0 10px #fbbf24; } .dot.off { background: #6b7280; box-shadow: none; }
+
+  nav { display: flex; gap: 3px; background: rgba(0,0,0,.25); padding: 5px; border-radius: 14px; border: 1px solid var(--card-b); }
+  nav button { flex: 1 1 auto; border: none; background: transparent; color: var(--muted); padding: 9px 4px; border-radius: 10px; cursor: pointer;
+               font: 600 12.5px inherit; white-space: nowrap; transition: background .15s, color .15s; }
+  nav button:hover { color: var(--text); background: rgba(255,255,255,.05); }
+  nav button.on { background: var(--accent); color: #0b0d1a; }
+  .page { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 14px; overflow-y: auto; padding-right: 4px; }
+  .page.on { display: flex; }
+  .page::-webkit-scrollbar, aside::-webkit-scrollbar, .lib::-webkit-scrollbar { width: 8px; }
+  .page::-webkit-scrollbar-thumb, aside::-webkit-scrollbar-thumb, .lib::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 8px; }
+
+  .preview { position: relative; flex: 0 0 auto; width: 100%; height: 42vh; border-radius: 18px;
+             overflow: hidden; background: #000; border: 1px solid var(--card-b); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+  .preview video, .preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .preview .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); }
+  .preview .bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 18px 14px;
+                  background: linear-gradient(transparent, rgba(5,6,16,.85)); display: flex; align-items: center; gap: 10px; }
+  .preview .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preview .meta { color: var(--muted); font-size: 12px; }
+  .round { width: 44px; height: 44px; border-radius: 50%; border: none; cursor: pointer; display: grid; place-items: center;
+           background: rgba(255,255,255,.14); backdrop-filter: blur(8px); color: #fff; transition: transform .15s, background .15s; flex: 0 0 auto; }
+  .round.sm { width: 34px; height: 34px; }
+  .round:hover { background: rgba(255,255,255,.24); transform: scale(1.06); }
+  .round svg { width: 18px; height: 18px; fill: #fff; } .round.sm svg { width: 14px; height: 14px; }
+
+  .libhead { display: flex; align-items: center; gap: 10px; }
+  h2 { font-size: 13px; margin: 0; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .btn { border: none; cursor: pointer; font: 600 13.5px inherit; color: #0b0d1a; background: var(--accent);
+         padding: 10px 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+         box-shadow: 0 6px 18px rgba(124,140,255,.3); transition: filter .15s, transform .15s; }
+  .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--card-b); box-shadow: none; }
+  .btn.danger { background: transparent; color: var(--danger); border: 1px solid rgba(255,107,138,.35); box-shadow: none; width: 100%; }
+  .btn.grad { background: linear-gradient(135deg, #7c8cff, #5ee1ff); }
+  .btn:disabled { opacity: .45; cursor: default; transform: none; filter: none; }
+  .libhead .btn { margin-left: auto; }
+
+  .lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; grid-auto-rows: 104px; align-content: start; }
+  .tile { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; background: #05060f;
+          border: 2px solid transparent; transition: transform .15s, border-color .15s; }
+  .tile:hover { transform: translateY(-2px); border-color: rgba(124,140,255,.5); }
+  .tile.active { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(124,140,255,.18); }
+  .tile.missing { opacity: .45; cursor: default; }
+  .tile video, .tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .tile .lbl { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 10px 7px; font-size: 12px; font-weight: 600;
+               background: linear-gradient(transparent, rgba(0,0,0,.8)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .badges { position: absolute; top: 7px; left: 7px; right: 36px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .badge { font-size: 10.5px; font-weight: 700; padding: 3px 7px; border-radius: 6px; background: var(--accent); color: #0b0d1a; }
+  .tile .x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; border: none; cursor: pointer;
+             background: rgba(0,0,0,.55); color: #fff; font-size: 14px; line-height: 1; opacity: 0; transition: opacity .15s; }
+  .tile:hover .x { opacity: 1; }
+  .add { border: 2px dashed rgba(255,255,255,.14); background: transparent; display: grid; place-items: center; color: var(--muted); font-weight: 600; font-size: 13px; }
+  .add:hover { border-color: var(--accent); color: var(--text); }
+  .add span { font-size: 28px; display: block; text-align: center; line-height: 1; margin-bottom: 4px; }
+
+  .card { background: var(--card); border: 1px solid var(--card-b); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .card p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 2px; }
+  .row + .row { border-top: 1px solid rgba(255,255,255,.05); }
+  .row .t { font-size: 14px; } .row .d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  aside { background: var(--card); border: 1px solid var(--card-b); border-radius: 18px; padding: 16px; display: flex;
+          flex-direction: column; gap: 6px; overflow-y: auto; backdrop-filter: blur(12px); }
+  aside h3 { margin: 8px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 650; }
+  .sw { position: relative; width: 44px; height: 24px; flex: 0 0 auto; }
+  .sw input { display: none; }
+  .sw i { position: absolute; inset: 0; border-radius: 99px; background: rgba(255,255,255,.14); cursor: pointer; transition: background .2s; }
+  .sw i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .sw input:checked + i { background: var(--accent); }
+  .sw input:checked + i::after { transform: translateX(20px); }
+  .sw input:disabled + i { opacity: .4; cursor: default; }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: rgba(0,0,0,.25); border-radius: 12px; padding: 4px; gap: 4px; }
+  .seg button { border: none; background: transparent; color: var(--muted); padding: 8px 4px; border-radius: 9px; cursor: pointer; font: 600 12.5px inherit; white-space: nowrap; }
+  .seg button.on { background: var(--accent); color: #0b0d1a; }
+  input[type=range] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 6px; background: rgba(255,255,255,.12); outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+                                            box-shadow: 0 0 0 4px rgba(124,140,255,.35); cursor: pointer; }
+  input[type=range]:disabled { opacity: .35; }
+  input[type=text], input[type=time] { background: rgba(0,0,0,.3); border: 1px solid var(--card-b); color: var(--text); border-radius: 10px;
+                     padding: 8px 10px; font: 13.5px inherit; font-family: inherit; outline: none; color-scheme: dark; }
+  input[type=text]:focus, input[type=time]:focus { border-color: var(--accent); }
+  .val { font-size: 12.5px; color: var(--accent2); font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+  .spacer { flex: 1; }
+  .foot { font-size: 11.5px; color: var(--muted); text-align: center; margin-top: 8px; }
+
+  .hd { background: linear-gradient(135deg, rgba(124,140,255,.16), rgba(94,225,255,.08)); border: 1px solid rgba(124,140,255,.3);
+        border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .res { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .res b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .prog { height: 8px; border-radius: 8px; background: rgba(255,255,255,.1); overflow: hidden; }
+  .prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7c8cff, #5ee1ff); transition: width .4s; }
+  .ptxt { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); gap: 8px; }
+  .note { font-size: 12px; padding: 8px 10px; border-radius: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .note.ok { background: rgba(74,222,128,.12); color: #86efac; } .note.err { background: rgba(255,107,138,.12); color: #fda4af; }
+  .note .x { margin-left: auto; background: none; border: none; color: inherit; cursor: pointer; font-size: 15px; }
+  .link { background: none; border: none; color: var(--muted); cursor: pointer; font: 12px inherit; text-decoration: underline; padding: 0; }
+  .note .link { color: inherit; }
+
+  /* day / night */
+  .dncard { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--card-b); background: #05060f; aspect-ratio: 16/9; }
+  .dncard video, .dncard img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .dncard .lab { position: absolute; top: 10px; left: 12px; font-weight: 700; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  .dncard .now { position: absolute; top: 10px; right: 12px; }
+  .dncard .none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+  .dncard .acts { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; padding: 30px 10px 10px; background: linear-gradient(transparent, rgba(0,0,0,.8)); }
+  .dncard .acts .btn { padding: 7px 10px; font-size: 12px; }
+
+  /* editor */
+  .edwrap { position: relative; width: 100%; height: 34vh; background: #000; border-radius: 14px; overflow: hidden; border: 1px solid var(--card-b); }
+  .edwrap video, .edwrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #logoLayer { position: absolute; inset: 0; cursor: crosshair; display: none; }
+  #logoBox { position: absolute; border: 2px dashed #ff6b8a; background: rgba(255,107,138,.18); display: none; pointer-events: none; }
+  .trim { position: relative; height: 34px; }
+  .trim input[type=range] { position: absolute; left: 0; right: 0; top: 14px; pointer-events: none; background: transparent; }
+  .trim input[type=range]::-webkit-slider-thumb { pointer-events: auto; }
+  .trim .track { position: absolute; left: 0; right: 0; top: 14px; height: 6px; border-radius: 6px; background: rgba(255,255,255,.12); }
+  .trim .sel { position: absolute; top: 14px; height: 6px; border-radius: 6px; background: linear-gradient(90deg, #7c8cff, #5ee1ff); }
+  .kv { display: grid; grid-template-columns: 110px 1fr 52px; align-items: center; gap: 10px; font-size: 13px; }
+
+  /* customization */
+  .posgrid { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 22px); gap: 4px; background: rgba(0,0,0,.25); padding: 6px; border-radius: 10px; width: max-content; }
+  .posgrid button { border: none; border-radius: 5px; background: rgba(255,255,255,.08); cursor: pointer; }
+  .posgrid button.on { background: var(--accent); }
+  .posgrid button:disabled { visibility: hidden; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatches button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .swatches button.on { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.2); }
+  .keys { display: grid; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  kbd { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.15); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; font: 600 11.5px inherit; color: var(--text); }
+
+  .modal { position: fixed; inset: 0; background: rgba(5,6,16,.7); backdrop-filter: blur(6px); display: none; place-items: center; z-index: 50; }
+  .modal.on { display: grid; }
+  .modal .box { width: min(760px, 90vw); max-height: 80vh; overflow-y: auto; background: #11152b; border: 1px solid var(--card-b); border-radius: 18px; padding: 18px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="main">
+    <header>
+      <div class="logo"><svg viewBox="0 0 24 24"><path fill="#fff" d="M8 5v14l11-7z"/></svg></div>
+      <div><h1>VidWall</h1><div class="sub">Ta vidéo en fond d'écran, derrière tes icônes</div></div>
+      <div class="pills"><button class="pill" id="updPill" style="display:none;cursor:pointer;color:#0b0d1a;background:linear-gradient(135deg,#7c8cff,#5ee1ff);border:none;font-weight:700" onclick="document.querySelector('#tabs button[data-p=perf]').click()">⬆ Mise à jour</button>
+      <div class="pill"><span class="dot" id="dot"></span><span id="status">…</span></div></div>
+    </header>
+
+    <nav id="tabs">
+      <button data-p="home" class="on">🖼️ Fond d'écran</button>
+      <button data-p="dn">🌗 Jour / Nuit</button>
+      <button data-p="tools">🎬 Outils vidéo</button>
+      <button data-p="custom">🎨 Personnalisation</button>
+      <button data-p="perf">⚡ Performance</button>
+      <button data-p="share">📤 Partage</button>
+    </nav>
+
+    <!-- HOME -->
+    <section class="page on" id="p-home">
+      <div class="preview">
+        <video id="pv" muted loop playsinline></video>
+        <img id="pvi" alt="" style="display:none">
+        <div class="empty" id="empty"><div><div style="font-size:40px">🎬</div>Aucune vidéo pour l'instant<br>
+          <button class="btn" style="margin-top:14px" onclick="act('pick')">Choisir une vidéo</button></div></div>
+        <div class="bar" id="bar">
+          <button class="round sm" onclick="act('prev')" title="Précédente (Ctrl+Alt+←)"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+          <button class="round" id="pp" onclick="act('pause')" title="Pause / lecture"></button>
+          <button class="round sm" onclick="act('next')" title="Suivante (Ctrl+Alt+→)"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+          <div style="min-width:0;margin-left:4px">
+            <div class="name" id="vname"></div>
+            <div class="meta" id="vmeta"></div>
+          </div>
+        </div>
+      </div>
+      <div class="libhead">
+        <h2>Bibliothèque</h2>
+        <button class="btn ghost" onclick="act('pick')">＋ Ajouter une vidéo ou un GIF</button>
+      </div>
+      <div class="lib" id="lib"></div>
+    </section>
+
+    <!-- DAY / NIGHT -->
+    <section class="page" id="p-dn">
+      <div class="card">
+        <div class="row" style="padding:0">
+          <div><h3>🌗 Cycle jour / nuit</h3><p>Une vidéo le jour, une autre la nuit — VidWall change tout seul.</p></div>
+          <label class="sw"><input type="checkbox" id="dnOn"><i></i></label>
+        </div>
+        <div class="seg" id="dnMode"><button data-v="fixed">🕖 Heures fixes</button><button data-v="sun">🌅 Lever / coucher du soleil</button></div>
+        <div id="dnFixed" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;gap:8px;align-items:center;font-size:13px">☀️ Jour à partir de <input type="time" id="dnDay"></label>
+          <label style="display:flex;gap:8px;align-items:center;font-size:13px">🌙 Nuit à partir de <input type="time" id="dnNight"></label>
+        </div>
+        <div id="dnSun" style="font-size:13px;color:var(--muted)"></div>
+      </div>
+      <div class="grid2">
+        <div class="dncard" id="dnDayCard"></div>
+        <div class="dncard" id="dnNightCard"></div>
+      </div>
+    </section>
+
+    <!-- TOOLS -->
+    <section class="page" id="p-tools">
+      <div class="grid2">
+        <div class="card">
+          <h3>🎞️ IA 60 fps</h3>
+          <p>Crée les images manquantes entre chaque image de ta vidéo pour une animation ultra fluide (comme pour ta vidéo Kling).</p>
+          <div class="res"><span>Vidéo actuelle</span><b id="fpsNow">—</b></div>
+          <button class="btn grad" id="fpsBtn" onclick="act('fps60')">✨ Passer en 60 fps</button>
+        </div>
+        <div class="card">
+          <h3>🧹 Effaceur de logo</h3>
+          <p>Dans l'éditeur ci-dessous, clique sur « Sélectionner le logo », puis dessine un rectangle autour du logo ou du filigrane à effacer.</p>
+          <div class="res"><span>Zone</span><b id="logoInfo">aucune</b></div>
+          <button class="btn ghost" onclick="startLogo()">🖱️ Sélectionner le logo</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>✂️ Éditeur</h3>
+        <div class="edwrap" id="edwrap">
+          <video id="ev" muted loop playsinline></video>
+          <img id="evi" alt="" style="display:none">
+          <div id="logoLayer"></div><div id="logoBox"></div>
+        </div>
+        <div id="trimBox">
+          <div class="ptxt"><span>Coupe : <b id="trimTxt" style="color:var(--text)"></b></span>
+            <span><button class="link" onclick="setTrimHere(0)">Début ici</button> · <button class="link" onclick="setTrimHere(1)">Fin ici</button></span></div>
+          <div class="trim"><div class="track"></div><div class="sel" id="trimSel"></div>
+            <input type="range" id="tStart" min="0" step="0.05"><input type="range" id="tEnd" min="0" step="0.05"></div>
+        </div>
+        <div class="kv"><span>Luminosité</span><input type="range" id="eB" min="-0.3" max="0.3" step="0.01" value="0"><span class="val" id="eBv"></span></div>
+        <div class="kv"><span>Contraste</span><input type="range" id="eC" min="0.5" max="1.6" step="0.01" value="1"><span class="val" id="eCv"></span></div>
+        <div class="kv"><span>Saturation</span><input type="range" id="eS" min="0" max="2" step="0.01" value="1"><span class="val" id="eSv"></span></div>
+        <div class="row" style="padding:4px 2px">
+          <div><div class="t">Boucle sans coupure</div><div class="d">Fond la fin dans le début (comme tes fonds d'écran)</div></div>
+          <label class="sw"><input type="checkbox" id="eLoop"><i></i></label>
+        </div>
+        <div class="kv" id="eFadeRow"><span>Durée du fondu</span><input type="range" id="eFade" min="0.3" max="2" step="0.1" value="1"><span class="val" id="eFadev"></span></div>
+        <div style="display:flex;gap:10px">
+          <button class="btn ghost" onclick="resetEditor()">Réinitialiser</button>
+          <button class="btn grad" style="flex:1" id="editBtn" onclick="runEdit()">✨ Créer la version modifiée</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CUSTOMIZATION -->
+    <section class="page" id="p-custom">
+      <div class="grid2">
+        <div class="card">
+          <h3>🕒 Widgets</h3>
+          <div class="row"><div class="t">Horloge</div><label class="sw"><input type="checkbox" id="wClock"><i></i></label></div>
+          <div class="row"><div class="t">Secondes</div><label class="sw"><input type="checkbox" id="wSec"><i></i></label></div>
+          <div class="row"><div class="t">Date</div><label class="sw"><input type="checkbox" id="wDate"><i></i></label></div>
+          <div class="row"><div><div class="t">Météo</div><div class="d" id="wxInfo"></div></div><label class="sw"><input type="checkbox" id="wWx"><i></i></label></div>
+          <div style="display:flex;gap:8px"><input type="text" id="wCity" placeholder="Ta ville (ex : Mirabel)" style="flex:1"><button class="btn ghost" onclick="set('w.city', $('wCity').value)">OK</button></div>
+          <div class="row"><div class="t">Position</div><div class="posgrid" id="wPos"></div></div>
+          <div class="row"><div class="t">Taille</div><div class="seg" id="wSize" style="width:170px"><button data-v="s">S</button><button data-v="m">M</button><button data-v="l">L</button></div></div>
+        </div>
+        <div class="card">
+          <h3>🎵 Visualiseur audio</h3>
+          <p>Réagit à la musique qui joue sur ton PC (Spotify, YouTube, jeux…).</p>
+          <div class="row"><div class="t">Activer</div><label class="sw"><input type="checkbox" id="vOn"><i></i></label></div>
+          <div class="seg" id="vStyle"><button data-v="spectre">Spectre</button><button data-v="aurore">Aurore</button><button data-v="anneau">Anneau</button><button data-v="particules">Particules</button><button data-v="lueur">Lueur</button></div>
+          <div class="row"><div class="t">Position</div><div class="seg" id="vPos" style="width:190px"><button data-v="bottom">En bas</button><button data-v="center">Centre</button></div></div>
+          <div class="row"><div class="t">Couleur</div><div class="swatches" id="vColor"></div></div>
+          <div class="kv" style="grid-template-columns:90px 1fr 46px"><span>Sensibilité</span><input type="range" id="vSens" min="0.4" max="2.5" step="0.1"><span class="val" id="vSensv"></span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="padding:0"><div><h3>⌨️ Raccourcis clavier</h3><p>Contrôle ton fond d'écran sans ouvrir la fenêtre.</p></div><label class="sw"><input type="checkbox" id="hk"><i></i></label></div>
+        <div class="keys" id="hkList"></div>
+      </div>
+    </section>
+
+    <!-- PERFORMANCE -->
+    <section class="page" id="p-perf">
+      <div class="card">
+        <h3>⚡ Pauses intelligentes</h3>
+        <div class="row"><div><div class="t">Pause en plein écran</div><div class="d">Quand un jeu ou une vidéo est en plein écran</div></div><label class="sw"><input type="checkbox" id="autoPause"><i></i></label></div>
+        <div class="row"><div><div class="t">Pause quand le bureau est caché</div><div class="d">Quand une fenêtre est agrandie et recouvre le bureau</div></div><label class="sw"><input type="checkbox" id="coveredPause"><i></i></label></div>
+        <div class="row"><div><div class="t">Économie de batterie</div><div class="d" id="batInfo">Pause quand le PC n'est pas branché</div></div><label class="sw"><input type="checkbox" id="batteryPause"><i></i></label></div>
+      </div>
+      <div class="card">
+        <h3>🎯 Limite d'images par seconde</h3>
+        <p>Affiche le fond d'écran avec moins d'images par seconde pour utiliser moins la carte graphique.</p>
+        <div class="seg" id="fpsLimit"><button data-v="0">Illimité</button><button data-v="60">60 fps</button><button data-v="30">30 fps</button><button data-v="24">24 fps</button></div>
+      </div>
+      <div class="card" id="updCard">
+        <h3>🔄 Mises à jour</h3>
+        <div class="res"><span>Version installée</span><b id="updVer"></b></div>
+        <div class="row" style="padding:4px 2px"><div><div class="t">Vérifier automatiquement</div><div class="d">Au démarrage puis toutes les 6 heures</div></div><label class="sw"><input type="checkbox" id="autoUpdate"><i></i></label></div>
+        <div id="updBox"></div>
+        <div style="display:flex;gap:10px">
+          <button class="btn ghost" id="updCheck" onclick="act('checkUpdate')">Vérifier maintenant</button>
+          <button class="btn grad" id="updInstall" style="flex:1;display:none" onclick="act('installUpdate')"></button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="padding:0"><div><h3>🚀 Lancer au démarrage</h3><p>VidWall démarre avec Windows, en arrière-plan.</p></div><label class="sw"><input type="checkbox" id="startup"><i></i></label></div>
+      </div>
+    </section>
+
+    <!-- SHARE -->
+    <section class="page" id="p-share">
+      <div class="grid2">
+        <div class="card">
+          <h3>📱 Export pour téléphone</h3>
+          <p>Version verticale 1440×3120 avec fond flouté, prête pour VidWall sur Android.</p>
+          <div class="row"><div><div class="t">Version 15 s max</div><div class="d">Pour l'écran de verrouillage Samsung</div></div><label class="sw"><input type="checkbox" id="phoneShort" checked><i></i></label></div>
+          <button class="btn grad" id="phoneBtn" onclick="act('phone', {v: $('phoneShort').checked ? 'short' : 'full'})">📱 Exporter pour téléphone</button>
+        </div>
+        <div class="card">
+          <h3>🎞️ Export en GIF</h3>
+          <p>Un GIF léger (720 px, 20 fps, 10 s max) à partager sur Discord ou ailleurs.</p>
+          <div class="spacer"></div>
+          <button class="btn grad" id="gifBtn" onclick="act('gif')">🎞️ Exporter en GIF</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>📁 Tes fichiers</h3>
+        <p>Toutes tes créations sont rangées dans <b id="folderTxt" style="color:var(--text)"></b></p>
+        <div style="display:flex;gap:10px"><button class="btn ghost" onclick="act('openFolder', {v: S.folders.exports})">Ouvrir le dossier des exports</button>
+          <button class="btn ghost" onclick="act('openFolder', {v: S.folders.hd})">Ouvrir le dossier HD</button></div>
+      </div>
+    </section>
+  </div>
+
+  <aside>
+    <h3>Tâches IA</h3>
+    <div class="hd">
+      <div class="res"><span>Ta vidéo</span><b id="srcRes">—</b></div>
+      <div class="res"><span>Ton écran</span><b id="tgtRes">—</b></div>
+      <button class="btn grad" id="hdBtn" onclick="act('upscale')">✨ Upscaler en HD</button>
+      <div id="hdRun" style="display:none">
+        <div class="ptxt" style="margin-bottom:6px"><span id="hdPhase"></span><span id="hdPct"></span></div>
+        <div class="prog"><i id="hdBar"></i></div>
+        <div class="ptxt" style="margin-top:6px"><span id="hdEta"></span><button class="link" onclick="act('cancelUpscale')">Annuler</button></div>
+      </div>
+      <div id="hdNote"></div>
+      <div class="seg" id="hdStyle"><button data-v="anime">Dessin / anime</button><button data-v="real">Réaliste</button></div>
+      <div class="row" style="padding:2px 2px 0">
+        <div><div class="t" style="font-size:13px">Auto-upscale</div><div class="d">Chaque nouvelle vidéo ou GIF</div></div>
+        <label class="sw"><input type="checkbox" id="autoHD"><i></i></label>
+      </div>
+    </div>
+
+    <h3>Affichage</h3>
+    <div class="seg" id="fit"><button data-v="cover">Remplir</button><button data-v="contain">Ajuster</button></div>
+    <div class="row">
+      <div><div class="t">Tous les écrans</div><div class="d" id="scr"></div></div>
+      <label class="sw"><input type="checkbox" id="allScreens"><i></i></label>
+    </div>
+    <div class="row" style="display:block">
+      <div style="display:flex;justify-content:space-between"><div class="t">Vitesse</div><div class="val" id="speedv"></div></div>
+      <input type="range" id="speed" min="0.25" max="2" step="0.25" style="margin-top:10px">
+    </div>
+
+    <h3>Son</h3>
+    <div class="row" id="soundRow">
+      <div><div class="t">Activer le son</div><div class="d">Coupé par défaut · pas de son pour les GIF</div></div>
+      <label class="sw"><input type="checkbox" id="sound"><i></i></label>
+    </div>
+    <div class="row" style="gap:12px"><input type="range" id="volume" min="0" max="100" step="1"><div class="val" id="volv"></div></div>
+
+    <div class="spacer"></div>
+    <button class="btn danger" onclick="if(confirm('Quitter VidWall ? Ton fond d\'écran normal reviendra.')) act('quit')">Quitter VidWall</button>
+    <div class="foot">Fermer cette fenêtre garde la vidéo active · icône près de l'horloge</div>
+  </aside>
+</div>
+
+<div class="modal" id="picker"><div class="box">
+  <div class="libhead" style="margin-bottom:14px"><h2 id="pickerTitle">Choisir</h2>
+    <button class="btn ghost" onclick="pickerBrowse()">📂 Parcourir…</button><button class="btn ghost" style="margin-left:6px" onclick="closePicker()">Fermer</button></div>
+  <div class="lib" id="pickerLib"></div>
+</div></div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let S = null, lastVer = null, libKey = "", visible = true, dragging = false, page = "home";
+  const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  const PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+  const esc = t => { const d = document.createElement('div'); d.textContent = t ?? ''; return d.innerHTML; };
+
+  function act(a, params = {}) {
+    const q = new URLSearchParams({a, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))});
+    fetch('/api/do?' + q).then(() => setTimeout(refresh, 150));
+  }
+  const set = (k, v) => act('set', {k, v: String(v)});
+
+  async function refresh() {
+    try { S = await (await fetch('/api/state')).json(); } catch { return; }
+    if (!S || S.video === undefined) return;
+    render();
+  }
+
+  // ---------- tabs ----------
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+    page = b.dataset.p;
+    document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + page));
+    if (S) render();
+  });
+
+  function segBind(id, key, conv = v => v) {
+    document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => set(key, conv(b.dataset.v)));
+  }
+  function segShow(id, val) {
+    document.querySelectorAll('#' + id + ' button').forEach(b => b.classList.toggle('on', String(b.dataset.v) === String(val)));
+  }
+
+  // ---------- render ----------
+  function mediaURL(r) { return '/file?i=' + r.i + '&p=' + encodeURIComponent(r.path); }
+  function thumb(r) {
+    if (r.gif) return `<img src="${mediaURL(r)}">`;
+    return `<video muted preload="metadata" src="${mediaURL(r)}#t=1"></video>`;
+  }
+
+  function render() {
+    const has = !!S.video;
+    $('empty').style.display = has ? 'none' : 'grid';
+    $('bar').style.display = has ? 'flex' : 'none';
+    const pv = $('pv'), pvi = $('pvi');
+    pv.style.display = S.isGif ? 'none' : 'block';
+    pvi.style.display = S.isGif ? 'block' : 'none';
+    if (has && S.ver !== lastVer) {
+      lastVer = S.ver;
+      if (S.isGif) { pv.removeAttribute('src'); pv.load(); pvi.src = '/video?v=' + S.ver; }
+      else { pvi.removeAttribute('src'); pv.src = '/video?v=' + S.ver; }
+      loadEditor();
+    }
+    if (!has) { pv.removeAttribute('src'); pv.load(); pvi.removeAttribute('src'); lastVer = null; }
+    pv.playbackRate = S.speed || 1;
+    pv.style.objectFit = S.fit; pvi.style.objectFit = S.fit;
+    if (has && !S.isGif && visible && !S.paused && page === 'home') pv.play().catch(()=>{}); else pv.pause();
+
+    const reasons = {fullscreen: 'Pause auto (plein écran)', covered: 'Pause auto (bureau caché)', battery: 'Pause auto (sur batterie)'};
+    $('dot').className = 'dot' + (!has ? ' off' : (S.paused || S.autoPaused) ? ' paused' : '');
+    $('status').textContent = !has ? 'Aucune vidéo' : S.paused ? 'En pause' : S.autoPaused ? (reasons[S.pauseReason] || 'Pause auto') : 'En lecture';
+    $('pp').innerHTML = S.paused ? PLAY : PAUSE;
+    $('vname').textContent = S.videoName || '';
+    $('vmeta').textContent = (S.fit === 'cover' ? 'Remplir' : 'Ajuster') + ' · x' + S.speed + (S.sound && !S.isGif ? ' · son ' + Math.round(S.volume * 100) + '%' : ' · muet');
+
+    // sidebar
+    segShow('fit', S.fit);
+    for (const k of ['allScreens', 'sound', 'autoPause', 'startup', 'coveredPause', 'batteryPause', 'autoHD']) $(k).checked = !!S[k];
+    $('scr').textContent = S.screens > 1 ? S.screens + ' écrans détectés' : '1 écran détecté';
+    if (!dragging) { $('speed').value = S.speed; $('volume').value = Math.round(S.volume * 100); }
+    $('speedv').textContent = 'x' + Number($('speed').value);
+    $('volv').textContent = $('volume').value + '%';
+    $('volume').disabled = !S.sound || S.isGif;
+    $('sound').disabled = S.isGif;
+    $('soundRow').style.opacity = S.isGif ? .4 : 1;
+    segShow('hdStyle', S.hdStyle);
+    renderJob();
+    renderUpdate();
+
+    // pages
+    const key = JSON.stringify(S.recent.map(r => [r.path, r.active, r.exists]));
+    if (key !== libKey) { libKey = key; renderLib(); }
+    if (page === 'dn') renderDN();
+    if (page === 'tools') renderTools();
+    if (page === 'custom') renderCustom();
+    if (page === 'perf') renderPerf();
+    if (page === 'share') renderShare();
+  }
+
+  function renderLib() {
+    const lib = $('lib'); lib.innerHTML = '';
+    S.recent.forEach(r => {
+      const t = document.createElement('div');
+      t.className = 'tile' + (r.active ? ' active' : '') + (r.exists ? '' : ' missing');
+      t.title = r.path;
+      if (r.exists) { t.innerHTML = thumb(r); t.onclick = () => { if (!r.active) act('use', {i: r.i}); }; }
+      const b = (r.active ? '<span class="badge">ACTIF</span>' : '') + (r.gif ? '<span class="badge" style="background:#5ee1ff">GIF</span>' : '') +
+                (r.hd ? '<span class="badge" style="background:linear-gradient(135deg,#7c8cff,#5ee1ff)">HD ✨</span>' : '');
+      t.insertAdjacentHTML('beforeend', `<div class="badges">${b}</div><div class="lbl"></div><button class="x" title="Retirer de la liste">×</button>`);
+      t.querySelector('.lbl').textContent = r.exists ? r.name : r.name + ' (introuvable)';
+      t.querySelector('.x').onclick = e => { e.stopPropagation(); act('remove', {i: r.i}); };
+      lib.appendChild(t);
+    });
+    const add = document.createElement('div');
+    add.className = 'tile add'; add.innerHTML = '<div><span>＋</span>Ajouter</div>'; add.onclick = () => act('pick');
+    lib.appendChild(add);
+  }
+
+  // ---------- job card ----------
+  const KINDS = {upscale: 'Upscale HD', fps60: 'IA 60 fps', edit: 'Éditeur', phone: 'Export téléphone', gif: 'Export GIF'};
+  const PHASES = {tools: 'Préparation…', download_ai: "Téléchargement de l'IA (1re fois)…", download_ff: 'Téléchargement de ffmpeg (1re fois)…',
+    download_rife: "Téléchargement de l'IA 60 fps (1re fois)…", probe: 'Analyse de la vidéo…', upscale: 'Upscale IA en cours…',
+    interp: 'Création des images 60 fps…', edit: 'Montage en cours…', export: 'Export en cours…', finish: 'Finalisation…', done: 'Terminé'};
+  function srcSize() {
+    if (!S || !S.video) return null;
+    if (S.isGif) { const i = $('pvi'); return i.naturalWidth ? [i.naturalWidth, i.naturalHeight] : null; }
+    const v = $('pv'); return v.videoWidth ? [v.videoWidth, v.videoHeight] : null;
+  }
+  const fmtTime = s => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60); return m ? m + ' min ' + (s % 60) + ' s' : s + ' s'; };
+  function renderJob() {
+    const J = S.job || {}, sz = srcSize();
+    $('tgtRes').textContent = S.targetW + '×' + S.targetH;
+    $('srcRes').textContent = sz ? sz[0] + '×' + sz[1] : (S.video ? '…' : '—');
+    const enough = sz && Math.max(S.targetW / sz[0], S.targetH / sz[1]) <= 1.05;
+    $('hdBtn').disabled = !S.video || J.running || S.isHD || enough;
+    $('hdBtn').textContent = S.isHD ? '✓ Déjà upscalée en HD' : enough ? '✓ Déjà en résolution max' : '✨ Upscaler en HD';
+    for (const id of ['fpsBtn', 'editBtn', 'phoneBtn', 'gifBtn']) $(id).disabled = !S.video || J.running;
+    $('hdRun').style.display = J.running ? 'block' : 'none';
+    if (J.running) {
+      const p = Math.max(0, Math.min(1, J.progress || 0));
+      $('hdPhase').textContent = (KINDS[J.kind] ? KINDS[J.kind] + ' · ' : '') + (PHASES[J.phase] || '…');
+      $('hdPct').textContent = Math.round(p * 100) + '%';
+      $('hdBar').style.width = (p * 100) + '%';
+      let eta = '';
+      if (['upscale', 'interp', 'edit', 'export'].includes(J.phase) && p > 0.03) eta = 'Reste environ ' + fmtTime((Date.now() / 1000 - J.started) * (1 - p) / p);
+      $('hdEta').textContent = eta || J.src;
+    }
+    let note = '';
+    const close = `<button class="x" onclick="act('dismissUpscale')">×</button>`;
+    if (!J.running && J.done) {
+      const applied = ['upscale', 'fps60', 'edit'].includes(J.kind);
+      note = `<div class="note ok">✓ ${esc(KINDS[J.kind] || '')} : ${applied ? 'prêt et appliqué' : 'fichier prêt'} — ${esc(J.done)}
+        <button class="link" onclick="act('openFolder')">Ouvrir le dossier</button>${close}</div>`;
+    } else if (!J.running && J.err && J.err !== 'cancelled') {
+      const msg = J.err === 'already' ? 'Cette vidéo est déjà à la résolution de ton écran.' :
+                  J.err === 'already60' ? 'Cette vidéo est déjà fluide (50 fps ou plus).' : 'Erreur : ' + esc(J.err);
+      note = `<div class="note err">${msg}${close}</div>`;
+    }
+    $('hdNote').innerHTML = note;
+  }
+
+  // ---------- day / night ----------
+  const hm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  function renderDN() {
+    const D = S.dayNight;
+    $('dnOn').checked = D.enabled;
+    segShow('dnMode', D.mode);
+    $('dnFixed').style.display = D.mode === 'fixed' ? 'flex' : 'none';
+    $('dnSun').style.display = D.mode === 'sun' ? 'block' : 'none';
+    if (document.activeElement !== $('dnDay')) $('dnDay').value = D.dayStart;
+    if (document.activeElement !== $('dnNight')) $('dnNight').value = D.nightStart;
+    $('dnSun').innerHTML = S.widgets.city
+      ? `📍 ${esc(S.widgets.city)} — ☀️ lever à <b>${hm(S.dayBounds[0])}</b> · 🌙 coucher à <b>${hm(S.dayBounds[1])}</b>`
+      : `Indique ta ville dans <b>Personnalisation → Météo</b> pour suivre le soleil.`;
+    for (const [k, id, lab] of [['day', 'dnDayCard', '☀️ Jour'], ['night', 'dnNightCard', '🌙 Nuit']]) {
+      const p = k === 'day' ? D.dayVideo : D.nightVideo;
+      const r = S.recent.find(x => x.path === p);
+      const cur = S.period === k;
+      const key = p + cur + D.enabled;
+      const el = $(id);
+      if (el.dataset.key === key) continue;
+      el.dataset.key = key;
+      el.innerHTML = (r && r.exists ? thumb(r) : `<div class="none">${p ? 'Vidéo introuvable' : 'Aucune vidéo choisie'}</div>`) +
+        `<div class="lab">${lab}</div>` + (cur && D.enabled ? '<span class="badge now">MAINTENANT</span>' : '') +
+        `<div class="acts"><button class="btn" onclick="openPicker('${k}')">Choisir…</button>` +
+        (p ? `<button class="btn ghost" onclick="act('dnSet', {k:'${k}', i:-2})">Retirer</button>` : '') + '</div>';
+    }
+  }
+  $('dnOn').onchange = e => set('dn.enabled', e.target.checked);
+  segBind('dnMode', 'dn.mode');
+  $('dnDay').onchange = e => set('dn.dayStart', e.target.value);
+  $('dnNight').onchange = e => set('dn.nightStart', e.target.value);
+
+  let pickerFor = '';
+  function openPicker(k) {
+    pickerFor = k;
+    $('pickerTitle').textContent = k === 'day' ? '☀️ Vidéo du jour' : '🌙 Vidéo de la nuit';
+    const lib = $('pickerLib'); lib.innerHTML = '';
+    S.recent.filter(r => r.exists).forEach(r => {
+      const t = document.createElement('div');
+      t.className = 'tile'; t.innerHTML = thumb(r) + '<div class="lbl"></div>';
+      t.querySelector('.lbl').textContent = r.name;
+      t.onclick = () => { act('dnSet', {k, i: r.i}); closePicker(); };
+      lib.appendChild(t);
+    });
+    $('picker').classList.add('on');
+  }
+  function pickerBrowse() { act('dnSet', {k: pickerFor, i: -1}); closePicker(); }
+  function closePicker() { $('picker').classList.remove('on'); }
+
+  // ---------- tools / editor ----------
+  let E = {dur: 0, logo: null};
+  function loadEditor() {
+    const ev = $('ev'), evi = $('evi');
+    E.logo = null; drawLogoBox();
+    if (!S || !S.video) return;
+    if (S.isGif) { ev.removeAttribute('src'); ev.load(); ev.style.display = 'none'; evi.style.display = 'block'; evi.src = '/video?v=' + S.ver; $('trimBox').style.display = 'none'; }
+    else { evi.removeAttribute('src'); evi.style.display = 'none'; ev.style.display = 'block'; ev.src = '/video?v=' + S.ver; $('trimBox').style.display = 'block'; }
+  }
+  $('ev').addEventListener('loadedmetadata', () => {
+    E.dur = $('ev').duration || 0;
+    for (const id of ['tStart', 'tEnd']) $(id).max = E.dur.toFixed(2);
+    $('tStart').value = 0; $('tEnd').value = E.dur.toFixed(2);
+    updTrim(); renderTools();
+  });
+  $('ev').addEventListener('timeupdate', () => {
+    const ev = $('ev'), a = +$('tStart').value, b = +$('tEnd').value;
+    if (b > a && (ev.currentTime > b || ev.currentTime < a - 0.2)) ev.currentTime = a;
+  });
+  function updTrim() {
+    let a = +$('tStart').value, b = +$('tEnd').value;
+    if (a > b - 0.2) { if (document.activeElement === $('tStart')) a = $('tStart').value = Math.max(0, b - 0.2); else b = $('tEnd').value = Math.min(E.dur, a + 0.2); }
+    const d = E.dur || 1;
+    $('trimSel').style.left = (a / d * 100) + '%'; $('trimSel').style.width = ((b - a) / d * 100) + '%';
+    $('trimTxt').textContent = a.toFixed(1) + ' s → ' + (+b).toFixed(1) + ' s (' + (b - a).toFixed(1) + ' s)';
+  }
+  $('tStart').oninput = () => { updTrim(); $('ev').currentTime = +$('tStart').value; };
+  $('tEnd').oninput = () => { updTrim(); $('ev').currentTime = Math.max(0, +$('tEnd').value - 0.5); };
+  function setTrimHere(which) { const t = $('ev').currentTime; $(which ? 'tEnd' : 'tStart').value = t.toFixed(2); updTrim(); }
+  function applyFilter() {
+    const b = +$('eB').value, c = +$('eC').value, s = +$('eS').value;
+    const f = `brightness(${1 + b * 1.6}) contrast(${c}) saturate(${s})`;
+    $('ev').style.filter = f; $('evi').style.filter = f;
+    $('eBv').textContent = (b > 0 ? '+' : '') + Math.round(b * 100); $('eCv').textContent = Math.round(c * 100) + '%'; $('eSv').textContent = Math.round(s * 100) + '%';
+    $('eFadev').textContent = (+$('eFade').value).toFixed(1) + ' s';
+    $('eFadeRow').style.opacity = $('eLoop').checked ? 1 : .4;
+  }
+  for (const id of ['eB', 'eC', 'eS', 'eFade', 'eLoop']) $(id).addEventListener('input', applyFilter);
+  function resetEditor() {
+    $('eB').value = 0; $('eC').value = 1; $('eS').value = 1; $('eLoop').checked = false; $('eFade').value = 1;
+    $('tStart').value = 0; $('tEnd').value = E.dur.toFixed(2); E.logo = null; drawLogoBox(); updTrim(); applyFilter();
+  }
+  // media rect (object-fit: contain) inside the editor box
+  function mediaRect() {
+    const box = $('edwrap').getBoundingClientRect();
+    const el = S.isGif ? $('evi') : $('ev');
+    const iw = S.isGif ? el.naturalWidth : el.videoWidth, ih = S.isGif ? el.naturalHeight : el.videoHeight;
+    if (!iw) return null;
+    const sc = Math.min(box.width / iw, box.height / ih);
+    return {x: (box.width - iw * sc) / 2, y: (box.height - ih * sc) / 2, sc, iw, ih, box};
+  }
+  function startLogo() {
+    document.querySelector('#tabs button[data-p=tools]').click();
+    $('logoLayer').style.display = 'block';
+    $('logoInfo').textContent = 'dessine un rectangle sur la vidéo…';
+  }
+  (() => {
+    let start = null;
+    const L = $('logoLayer');
+    L.onmousedown = e => { const r = L.getBoundingClientRect(); start = [e.clientX - r.left, e.clientY - r.top]; };
+    L.onmousemove = e => {
+      if (!start) return;
+      const r = L.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+      const m = mediaRect(); if (!m) return;
+      E.logo = [Math.min(start[0], x), Math.min(start[1], y), Math.abs(x - start[0]), Math.abs(y - start[1])].map((v, i) =>
+        Math.round((v - (i === 0 ? m.x : i === 1 ? m.y : 0)) / m.sc));
+      drawLogoBox();
+    };
+    window.addEventListener('mouseup', () => { if (start) { start = null; L.style.display = 'none'; renderTools(); } });
+  })();
+  function drawLogoBox() {
+    const b = $('logoBox');
+    if (!E.logo || E.logo[2] < 3 || E.logo[3] < 3) { b.style.display = 'none'; $('logoInfo').textContent = 'aucune'; return; }
+    const m = mediaRect(); if (!m) return;
+    const [x, y, w, h] = E.logo;
+    Object.assign(b.style, {display: 'block', left: (m.x + x * m.sc) + 'px', top: (m.y + y * m.sc) + 'px', width: (w * m.sc) + 'px', height: (h * m.sc) + 'px'});
+    $('logoInfo').innerHTML = `${w}×${h} px <button class="link" onclick="E.logo=null;drawLogoBox()">retirer</button>`;
+  }
+  function renderTools() {
+    const sz = srcSize();
+    $('fpsNow').textContent = S.video ? (S.videoName + (sz ? ' · ' + sz[0] + '×' + sz[1] : '')) : '—';
+    applyFilter(); drawLogoBox();
+  }
+  function runEdit() {
+    const o = {Start: S.isGif ? 0 : +$('tStart').value, End: S.isGif ? 0 : +$('tEnd').value,
+      Brightness: +$('eB').value, Contrast: +$('eC').value, Saturation: +$('eS').value,
+      Logo: E.logo && E.logo[2] > 2 && E.logo[3] > 2 ? E.logo : [], Loop: $('eLoop').checked, LoopSeconds: +$('eFade').value};
+    if (o.End >= E.dur - 0.05) o.End = 0;
+    act('edit', {v: JSON.stringify(o)});
+  }
+
+  // ---------- customization ----------
+  const COLORS = ['#7c8cff', '#5ee1ff', '#c084fc', '#f472b6', '#fb7185', '#fbbf24', '#4ade80', '#ffffff'];
+  const POS = ['tl', '', 'tr', '', 'center', '', 'bl', '', 'br'];
+  (() => {
+    $('wPos').innerHTML = POS.map(p => `<button data-v="${p}" ${p ? '' : 'disabled'}></button>`).join('');
+    document.querySelectorAll('#wPos button').forEach(b => b.onclick = () => set('w.pos', b.dataset.v));
+    $('vColor').innerHTML = COLORS.map(c => `<button data-v="${c}" style="background:${c}"></button>`).join('');
+    document.querySelectorAll('#vColor button').forEach(b => b.onclick = () => set('viz.color', b.dataset.v));
+  })();
+  function renderCustom() {
+    const W = S.widgets, V = S.viz, X = S.weather;
+    $('wClock').checked = W.clock; $('wSec').checked = W.seconds; $('wDate').checked = W.date; $('wWx').checked = W.weather;
+    if (document.activeElement !== $('wCity') && !$('wCity').dataset.edited) $('wCity').value = W.city || '';
+    $('wxInfo').textContent = X.err ? X.err : X.ok ? `${Math.round(X.temp)}° à ${X.city}` : (W.city ? 'Chargement…' : 'Indique ta ville');
+    segShow('wPos', W.pos); segShow('wSize', W.size);
+    $('vOn').checked = V.enabled; segShow('vStyle', ({bars:'spectre',wave:'aurore',circle:'anneau',glow:'lueur'})[V.style] || V.style); segShow('vPos', V.pos); segShow('vColor', V.color);
+    if (!dragging) $('vSens').value = V.sens; $('vSensv').textContent = 'x' + (+$('vSens').value).toFixed(1);
+    $('hk').checked = S.hotkeys;
+    $('hkList').innerHTML = (S.hotkeyList || []).map(h => { const [k, d] = h.split(' : '); return `<div>${k.split('+').map(x => `<kbd>${x}</kbd>`).join(' + ')} &nbsp; ${esc(d)}</div>`; }).join('');
+    $('hkList').style.opacity = S.hotkeys ? 1 : .45;
+  }
+  for (const [id, k] of [['wClock', 'w.clock'], ['wSec', 'w.seconds'], ['wDate', 'w.date'], ['wWx', 'w.weather'], ['vOn', 'viz.enabled'], ['hk', 'hotkeys']])
+    $(id).onchange = e => set(k, e.target.checked);
+  $('wCity').onkeydown = e => { if (e.key === 'Enter') set('w.city', $('wCity').value); };
+  segBind('wSize', 'w.size'); segBind('vStyle', 'viz.style'); segBind('vPos', 'viz.pos');
+
+  // ---------- performance / share ----------
+  function renderUpdate() {
+    const U = S.update || {};
+    $('updPill').style.display = U.available ? 'flex' : 'none';
+    $('updPill').textContent = U.running ? '⬆ ' + Math.round((U.progress || 0) * 100) + '%' : '⬆ Mise à jour v' + (U.latest || '');
+    if (page !== 'perf') return;
+    $('updVer').textContent = 'v' + U.version;
+    $('autoUpdate').checked = !!S.autoUpdate;
+    $('updCheck').disabled = U.checking || U.running;
+    $('updCheck').textContent = U.checking ? 'Vérification…' : 'Vérifier maintenant';
+    const ib = $('updInstall');
+    ib.style.display = U.available ? 'inline-flex' : 'none';
+    ib.disabled = U.running;
+    ib.textContent = U.running ? 'Téléchargement… ' + Math.round((U.progress || 0) * 100) + '%' : '⬆ Installer la v' + U.latest + (U.size ? ' (' + (U.size / 1048576).toFixed(1) + ' Mo)' : '');
+    let html = '';
+    if (U.err) html = `<div class="note err">${esc(U.err)}</div>`;
+    else if (U.available) html = `<div class="note ok" style="display:block">✨ <b>Version ${esc(U.latest)} disponible</b>${U.notes ? '<div style="margin-top:6px;white-space:pre-wrap;color:var(--text);opacity:.85">' + esc(U.notes) + '</div>' : ''}<div style="margin-top:6px;opacity:.8">L'app redémarrera toute seule après l'installation.</div></div>`;
+    else if (U.checked) html = `<div class="note ok">✓ Tu as la dernière version</div>`;
+    $('updBox').innerHTML = html;
+  }
+  $('autoUpdate').onchange = e => set('autoUpdate', e.target.checked);
+
+  function renderPerf() {
+    segShow('fpsLimit', S.fpsLimit);
+    $('batteryPause').disabled = !S.hasBattery;
+    $('batInfo').textContent = S.hasBattery ? (S.onBattery ? 'Pause quand le PC n\'est pas branché · sur batterie maintenant' : 'Pause quand le PC n\'est pas branché') : 'Aucune batterie détectée (PC fixe)';
+  }
+  segBind('fpsLimit', 'fpsLimit');
+  function renderShare() { $('folderTxt').textContent = S.folders.exports.replace(/\\Exports$/, ''); }
+
+  // ---------- sidebar bindings ----------
+  segBind('fit', 'fit'); segBind('hdStyle', 'hdStyle');
+  for (const k of ['allScreens', 'sound', 'autoPause', 'startup', 'coveredPause', 'batteryPause', 'autoHD']) $(k).onchange = e => set(k, e.target.checked);
+  for (const [id, key, conv] of [['speed', 'speed', v => v], ['volume', 'volume', v => v / 100], ['vSens', 'viz.sens', v => v]]) {
+    const el = $(id);
+    el.oninput = () => { dragging = true; $('speedv').textContent = 'x' + Number($('speed').value); $('volv').textContent = $('volume').value + '%'; $('vSensv').textContent = 'x' + (+$('vSens').value).toFixed(1); };
+    el.onchange = () => { dragging = false; set(key, conv(Number(el.value))); };
+  }
+
+  window.refresh = refresh;
+  window.onShown = () => { visible = true; refresh(); };
+  window.onHidden = () => { visible = false; $('pv').pause(); $('ev').pause(); };
+  document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (S) render(); });
+  setInterval(() => { if (visible) refresh(); }, 1000);
+  setInterval(() => { const ev = $('ev'); if (page === 'tools' && visible && ev.src) { if (ev.paused) ev.play().catch(()=>{}); } else ev.pause(); }, 500);
+  window.addEventListener('resize', () => drawLogoBox());
+  refresh();
+</script>
+</body>
+</html>

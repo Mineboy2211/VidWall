@@ -1,0 +1,415 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: default; }
+  .media { position: absolute; background: #000; }
+  #hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          color: #8890c0; font: 600 22px "Segoe UI", sans-serif; background: radial-gradient(#151a3a, #050610); }
+  #overlay { position: absolute; pointer-events: none; z-index: 5; }
+  #viz { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #widgets { position: absolute; display: flex; flex-direction: column; gap: .15em; color: #fff;
+             font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+             text-shadow: 0 2px 18px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.5); }
+  #widgets.tl { top: 5%; left: 4%; } #widgets.tr { top: 5%; right: 4%; text-align: right; align-items: flex-end; }
+  #widgets.bl { bottom: 8%; left: 4%; } #widgets.br { bottom: 8%; right: 4%; text-align: right; align-items: flex-end; }
+  #widgets.center { top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; align-items: center; }
+  #widgets .clock { font-weight: 200; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  #widgets .clock small { font-size: .45em; opacity: .7; margin-left: .1em; }
+  #widgets .date { font-weight: 400; opacity: .9; text-transform: capitalize; }
+  #widgets .wx { display: inline-flex; align-items: center; gap: .4em; font-weight: 400; opacity: .95; }
+  #widgets .wx b { font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="hint">VidWall — clique droit sur l'icône près de l'horloge pour choisir une vidéo</div>
+<div id="overlay"><canvas id="viz"></canvas><div id="widgets"></div></div>
+<script>
+  let screens = [{X: 0, Y: 0, W: innerWidth * devicePixelRatio, H: innerHeight * devicePixelRatio}];
+  let state = {src: "", fit: "cover", sound: false, paused: false, gif: false, fpsLimit: 0, widgets: {}, viz: {}, weather: {}};
+  let vids = [];
+  let canv = [];            // canvases used by the FPS limiter (video mode)
+  let limTimer = null;
+  let G = {token: 0, dec: null, count: 0, idx: 0, canvases: [], imgs: [], timer: null, running: false};
+  const dpr = () => devicePixelRatio || 1;
+
+  function place(el, s) {
+    const d = dpr();
+    el.style.left = (s.X / d) + "px"; el.style.top = (s.Y / d) + "px";
+    el.style.width = (s.W / d) + "px"; el.style.height = (s.H / d) + "px";
+  }
+
+  function teardown() {
+    vids.forEach(v => { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); });
+    vids = [];
+    canv.forEach(c => c.remove()); canv = [];
+    clearInterval(limTimer); limTimer = null;
+    G.token++;
+    clearTimeout(G.timer); G.timer = null; G.running = false;
+    if (G.dec) { try { G.dec.close(); } catch (e) {} }
+    G.dec = null; G.count = 0; G.idx = 0;
+    G.canvases.forEach(c => c.remove()); G.canvases = [];
+    G.imgs.forEach(i => i.remove()); G.imgs = [];
+  }
+
+  function build() {
+    teardown();
+    document.getElementById("hint").style.display = state.src ? "none" : "flex";
+    placeOverlay();
+    if (!state.src) return;
+    if (state.gif) { buildGif(); return; }
+    const limit = state.fpsLimit > 0 && state.fpsLimit < 60;
+    screens.forEach((s, i) => {
+      const v = document.createElement("video");
+      v.className = "media";
+      v.loop = true; v.playsInline = true; v.autoplay = true;
+      v.muted = !(state.sound && i === 0);
+      place(v, s);
+      v.style.objectFit = state.fit;
+      v.src = state.src;
+      document.body.appendChild(v);
+      vids.push(v);
+      if (limit) {               // draw the video into a canvas at a capped frame rate
+        v.style.opacity = "0";
+        const c = document.createElement("canvas");
+        c.className = "media"; c.width = s.W; c.height = s.H; place(c, s);
+        document.body.appendChild(c); canv.push(c);
+      }
+    });
+    if (limit) limTimer = setInterval(() => {
+      if (state.paused) return;
+      vids.forEach((v, i) => { if (v.readyState >= 2) drawFit(canv[i], v, v.videoWidth, v.videoHeight); });
+    }, 1000 / state.fpsLimit);
+    sync();
+  }
+
+  function drawFit(c, src, iw, ih) {
+    if (!iw || !ih) return;
+    const ctx = c.getContext("2d");
+    const sc = state.fit === "cover" ? Math.max(c.width / iw, c.height / ih) : Math.min(c.width / iw, c.height / ih);
+    const w = iw * sc, h = ih * sc;
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src, (c.width - w) / 2, (c.height - h) / 2, w, h);
+  }
+
+  // ---------- GIF player ----------
+  async function buildGif() {
+    const my = G.token;
+    if (!("ImageDecoder" in window)) {
+      screens.forEach(s => {
+        const im = document.createElement("img");
+        im.className = "media"; place(im, s); im.style.objectFit = state.fit; im.src = state.src;
+        document.body.appendChild(im); G.imgs.push(im);
+      });
+      return;
+    }
+    screens.forEach(s => {
+      const c = document.createElement("canvas");
+      c.className = "media"; c.width = s.W; c.height = s.H; place(c, s);
+      document.body.appendChild(c); G.canvases.push(c);
+    });
+    try {
+      const buf = await (await fetch(state.src)).arrayBuffer();
+      if (my !== G.token) return;
+      const dec = new ImageDecoder({data: buf, type: "image/gif"});
+      await dec.tracks.ready;
+      await dec.completed.catch(() => {});
+      if (my !== G.token) { dec.close(); return; }
+      G.dec = dec; G.count = dec.tracks.selectedTrack.frameCount || 1; G.idx = 0;
+      sync();
+    } catch (e) { console.log("gif decode failed", e); }
+  }
+
+  async function gifStep() {
+    const my = G.token;
+    if (!G.dec || state.paused) { G.running = false; return; }
+    const t0 = performance.now();
+    let dur = 100;
+    try {
+      const {image} = await G.dec.decode({frameIndex: G.idx});
+      if (my !== G.token) { image.close(); return; }
+      G.canvases.forEach(c => drawFit(c, image, image.displayWidth, image.displayHeight));
+      dur = (image.duration || 0) / 1000;
+      if (dur <= 10) dur = 100;
+      image.close();
+    } catch (e) { G.idx = 0; }
+    G.idx = (G.idx + 1) % G.count;
+    let wait = dur / (state.speed || 1);
+    if (state.fpsLimit > 0) wait = Math.max(wait, 1000 / state.fpsLimit);
+    G.timer = setTimeout(gifStep, Math.max(0, wait - (performance.now() - t0)));
+  }
+
+  function sync() {
+    if (state.gif) {
+      G.imgs.forEach(im => im.style.objectFit = state.fit);
+      if (state.paused) { clearTimeout(G.timer); G.running = false; }
+      else if (G.dec && !G.running) { G.running = true; gifStep(); }
+      return;
+    }
+    vids.forEach((v, i) => {
+      v.style.objectFit = state.fit;
+      v.muted = !(state.sound && i === 0);
+      v.volume = state.volume ?? 0.6;
+      v.playbackRate = state.speed || 1;
+      if (state.paused) v.pause(); else v.play().catch(() => {});
+    });
+  }
+
+  // ---------- overlay: widgets + visualizer (on the main screen) ----------
+  const ov = document.getElementById("overlay"), vizC = document.getElementById("viz"), wEl = document.getElementById("widgets");
+  function placeOverlay() {
+    const s = screens[0];
+    place(ov, s);
+    vizC.width = Math.round(s.W * Q); vizC.height = Math.round(s.H * Q); specKey = "";
+    const size = {s: 0.065, m: 0.095, l: 0.135}[state.widgets.size || "m"];
+    wEl.style.fontSize = (s.H / dpr() * size / 3.2) + "px";
+  }
+
+  const WMO = {0: ["☀️", "Ensoleillé"], 1: ["🌤️", "Peu nuageux"], 2: ["⛅", "Partiellement nuageux"], 3: ["☁️", "Couvert"],
+    45: ["🌫️", "Brouillard"], 48: ["🌫️", "Brouillard"], 51: ["🌦️", "Bruine"], 53: ["🌦️", "Bruine"], 55: ["🌦️", "Bruine"],
+    61: ["🌧️", "Pluie"], 63: ["🌧️", "Pluie"], 65: ["🌧️", "Forte pluie"], 66: ["🌧️", "Pluie verglaçante"], 67: ["🌧️", "Pluie verglaçante"],
+    71: ["🌨️", "Neige"], 73: ["🌨️", "Neige"], 75: ["❄️", "Forte neige"], 77: ["🌨️", "Neige"], 80: ["🌦️", "Averses"],
+    81: ["🌧️", "Averses"], 82: ["⛈️", "Fortes averses"], 85: ["🌨️", "Averses de neige"], 86: ["🌨️", "Averses de neige"],
+    95: ["⛈️", "Orage"], 96: ["⛈️", "Orage"], 99: ["⛈️", "Orage"]};
+
+  function renderWidgets() {
+    const w = state.widgets || {};
+    wEl.className = w.pos || "tr";
+    const now = new Date();
+    let html = "";
+    if (w.clock) {
+      const hh = String(now.getHours()).padStart(2, "0"), mm = String(now.getMinutes()).padStart(2, "0");
+      html += `<div class="clock" style="font-size:3.2em">${hh}:${mm}${w.seconds ? `<small>${String(now.getSeconds()).padStart(2, "0")}</small>` : ""}</div>`;
+    }
+    if (w.date) html += `<div class="date" style="font-size:1em">${now.toLocaleDateString("fr-FR", {weekday: "long", day: "numeric", month: "long"})}</div>`;
+    const wx = state.weather || {};
+    if (w.weather && wx.ok) {
+      let [ic, label] = WMO[wx.code] || ["🌡️", ""];
+      if (!wx.isDay && wx.code <= 1) ic = "🌙";
+      html += `<div class="wx" style="font-size:.95em">${ic} <b>${Math.round(wx.temp)}°</b> ${label} · ${wx.city || ""}</div>`;
+    }
+    if (wEl.innerHTML !== html) wEl.innerHTML = html;
+  }
+  setInterval(renderWidgets, 1000);
+
+  // ================= visualizer =================
+  // Levels come from the app ~30 times/s; everything is smoothed and drawn here at the screen refresh rate.
+  const NB = 64;
+  let raw = new Float32Array(NB), shown = new Float32Array(NB), peaks = new Float32Array(NB), peakV = new Float32Array(NB);
+  let lastAudio = 0, vizRunning = false, gain = 0.35, activity = 0, lastT = 0;
+  let bassAvg = 0, lastBeat = 0, beat = 0, hueT = 0;
+  const hist = [];                        // past frames for the aurora echo layers
+  let parts = [];                         // particles
+  const Q = 0.6;                          // internal canvas resolution (60 %) -> much lighter, invisible difference on glows
+
+  window.setAudio = function (l) {
+    for (let i = 0; i < NB; i++) raw[i] = (l[i] || 0) / 1000;
+    lastAudio = performance.now();
+    if (!vizRunning) { vizRunning = true; lastT = 0; requestAnimationFrame(drawViz); }
+  };
+
+  function hexToRgb(h) { const n = parseInt((h || "#7c8cff").slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let h = 0, s = 0; const l = (mx + mn) / 2;
+    if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+      h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h /= 6; }
+    return [h * 360, s * 100, l * 100];
+  }
+  let palKey = "", pal = null;
+  function palette(hex) {
+    if (hex === palKey) return pal;
+    const [r, g, b] = hexToRgb(hex); const [h, s, l] = rgbToHsl(r, g, b);
+    palKey = hex;
+    pal = {h, s: Math.max(55, s), l: Math.min(70, Math.max(55, l)),
+           c: (a, dh = 0, dl = 0) => `hsla(${(h + dh + 360) % 360},${Math.max(55, s)}%,${Math.min(85, Math.max(45, l + dl))}%,${a})`};
+    return pal;
+  }
+
+  function drawViz(t) {
+    const v = state.viz || {}, ctx = vizC.getContext("2d"), W = vizC.width, H = vizC.height;
+    const dt = lastT ? Math.min(0.05, (t - lastT) / 1000) : 1 / 60; lastT = t;
+    const k = dt * 60;                                       // frame-rate independent smoothing
+    const playing = performance.now() - lastAudio < 600 && v.enabled && !state.paused;
+    activity += ((playing ? 1 : 0) - activity) * Math.min(1, (playing ? 0.12 : 0.07) * k);
+    ctx.clearRect(0, 0, W, H);
+    if (!v.enabled || (activity < 0.01 && !playing)) { vizRunning = false; parts = []; return; }
+
+    // automatic gain + smoothing
+    let loud = 0;
+    for (let i = 0; i < NB; i++) loud = Math.max(loud, raw[i]);
+    gain = loud > gain ? gain + (loud - gain) * 0.25 : Math.max(0.22, gain - 0.0015 * k);
+    const sens = v.sens || 1;
+    for (let i = 0; i < NB; i++) {
+      const target = playing ? Math.min(1, raw[i] / gain * 0.92 * sens) : 0;
+      shown[i] += (target - shown[i]) * Math.min(1, (target > shown[i] ? 0.55 : 0.13) * k);
+      if (shown[i] > peaks[i]) { peaks[i] = shown[i]; peakV[i] = 0; }
+      else { peakV[i] += 0.0009 * k; peaks[i] = Math.max(0, peaks[i] - peakV[i] * k); }
+    }
+    // beat detection on the bass
+    const bass = (shown[0] + shown[1] + shown[2] + shown[3] + shown[4]) / 5;
+    bassAvg += (bass - bassAvg) * 0.04 * k;
+    if (bass > bassAvg * 1.3 + 0.08 && bass > 0.3 && t - lastBeat > 200) { lastBeat = t; beat = 1; onBeat(W, H); }
+    beat = Math.max(0, beat - 0.06 * k);
+    hueT += dt * 8;
+
+    const P = palette(v.color), A = activity, center = v.pos === "center";
+    ctx.globalCompositeOperation = "lighter";
+    switch (v.style) {
+      case "aurore": case "wave": drawAurora(ctx, W, H, P, A, center); break;
+      case "anneau": case "circle": drawRing(ctx, W, H, P, A, bass); break;
+      case "particules": drawParticles(ctx, W, H, P, A, dt); break;
+      case "lueur": case "glow": drawGlow(ctx, W, H, P, A, bass); break;
+      default: drawSpectrum(ctx, W, H, P, A, center);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    requestAnimationFrame(drawViz);
+  }
+
+  // ---- 1. classic spectrum, low -> high, with falling peak caps
+  let specGrad = null, specKey = "";
+  function drawSpectrum(ctx, W, H, P, A, center) {
+    const side = W * 0.04, slot = (W - 2 * side) / NB, bw = slot * 0.62;
+    const base = center ? H * 0.62 : H * 0.97, maxH = H * (center ? 0.3 : 0.26);
+    const key = P.h + "|" + base + "|" + maxH;
+    if (key !== specKey) {
+      specKey = key;
+      specGrad = ctx.createLinearGradient(0, base - maxH, 0, base);
+      specGrad.addColorStop(0, P.c(1, 40, 15)); specGrad.addColorStop(0.5, P.c(1)); specGrad.addColorStop(1, P.c(0.9, -30, -5));
+    }
+    ctx.globalAlpha = A;
+    // soft glow pass (wide, faint) then the bars
+    ctx.fillStyle = P.c(0.12);
+    for (let i = 0; i < NB; i++) {
+      const h = shown[i] * maxH; if (h < 2) continue;
+      const x = side + i * slot;
+      ctx.fillRect(x - bw * 0.2, base - h - bw * 0.6, bw * 1.4 + slot - bw, h + bw * 0.6);
+    }
+    ctx.fillStyle = specGrad;
+    for (let i = 0; i < NB; i++) {
+      const h = shown[i] * maxH; const x = side + i * slot + (slot - bw) / 2;
+      if (h >= 2) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, base - h, bw, h, [bw / 2, bw / 2, 0, 0]) : ctx.rect(x, base - h, bw, h); ctx.fill(); }
+      const ph = peaks[i] * maxH;
+      if (ph > 4) { ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fillRect(x, base - ph - bw * 0.55, bw, bw * 0.3); ctx.fillStyle = specGrad; }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- 2. aurora: layered flowing curves with echoes of the previous frames
+  function curve(ctx, pts) {
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const xc = (pts[i][0] + pts[i + 1][0]) / 2, yc = (pts[i][1] + pts[i + 1][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], xc, yc);
+    }
+    const l = pts[pts.length - 1]; ctx.lineTo(l[0], l[1]);
+  }
+  function drawAurora(ctx, W, H, P, A, center) {
+    hist.unshift(Float32Array.from(shown)); if (hist.length > 18) hist.pop();
+    const base = center ? H * 0.68 : H, amp = H * (center ? 0.32 : 0.42);
+    const layers = [[0, 0, 0.85], [7, 70, 0.6], [14, -60, 0.45]];   // [delay frames, hue shift, alpha]
+    for (const [d, dh, al] of layers) {
+      const f = hist[Math.min(d, hist.length - 1)];
+      const pts = [];
+      for (let i = 0; i <= 24; i++) {
+        // spread 64 bands over 25 points, emphasising low/mid frequencies
+        const b = Math.min(NB - 1, Math.floor(Math.pow(i / 24, 1.6) * (NB - 1)));
+        const sway = Math.sin(hueT * 0.35 + i * 0.55 + d) * 0.04;
+        pts.push([i / 24 * W, base - (f[b] * 0.9 + 0.05 + sway) * amp]);
+      }
+      let top = base; for (const q of pts) top = Math.min(top, q[1]);
+      const g = ctx.createLinearGradient(0, top, 0, base);
+      g.addColorStop(0, P.c(al * 0.75 * A, dh + Math.sin(hueT * 0.05) * 20, 12));
+      g.addColorStop(0.55, P.c(al * 0.35 * A, dh, 0));
+      g.addColorStop(1, P.c(al * 0.08 * A, dh));
+      ctx.beginPath(); curve(ctx, pts); ctx.lineTo(W, base + 2); ctx.lineTo(0, base + 2); ctx.closePath();
+      ctx.fillStyle = g; ctx.fill();
+      ctx.beginPath(); curve(ctx, pts);
+      ctx.strokeStyle = P.c(Math.min(1, al * 1.3) * A, dh, 22); ctx.lineWidth = Math.max(2, H * 0.005); ctx.stroke();
+    }
+  }
+
+  // ---- 3. ring: one continuous shape around the center, pulses on the bass
+  function drawRing(ctx, W, H, P, A, bass) {
+    const cx = W / 2, cy = H / 2, R = H * (0.17 + bass * 0.04 + beat * 0.03), n = 96, rot = hueT * 0.02;
+    for (const [scale, dh, al, lw] of [[1, 0, 1, 0.009], [0.82, 60, 0.7, 0.005], [1.18, -50, 0.5, 0.004]]) {
+      ctx.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const a = (i / n) * Math.PI * 2 + rot * (scale > 1 ? -1 : 1);
+        // map the angle to the spectrum and blend the seam so the ring closes smoothly
+        const pos = (i % n) / n, b1 = Math.floor(pos * (NB - 1)), w = Math.min(1, (1 - pos) * 8);
+        const lv = shown[b1] * w + shown[0] * (1 - w);
+        const r = R * scale + lv * H * 0.13 * (scale === 1 ? 1 : 0.6);
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = P.c(al * A, dh + Math.sin(hueT * 0.04) * 15, 12); ctx.lineWidth = H * lw; ctx.stroke();
+    }
+    // inner glow that flashes on beats
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.95);
+    g.addColorStop(0, P.c((0.15 + beat * 0.5) * A, 0, 20)); g.addColorStop(1, P.c(0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 0.95, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ---- 4. particles: rise from the bottom with the music, burst on beats
+  function onBeat(W, H) {
+    const st = (state.viz || {}).style;
+    if (st !== "particules") return;
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (0.25 + Math.random() * 0.6) * H;
+      parts.push({x: W / 2, y: H / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, size: 1.5 + Math.random() * 3, dh: Math.random() * 80 - 40});
+    }
+  }
+  function drawParticles(ctx, W, H, P, A, dt) {
+    for (let i = 0; i < NB; i += 2) {
+      if (Math.random() < shown[i] * 0.5 && parts.length < 450) {
+        const x = (i + Math.random() * 2) / NB * W;
+        parts.push({x, y: H + 4, vx: (Math.random() - .5) * H * 0.05, vy: -(0.12 + shown[i] * 0.5) * H, life: 1, size: 1 + shown[i] * 4, dh: i * 1.4 - 40});
+      }
+    }
+    const S = H / 1000;
+    for (const p of parts) {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy *= 0.995; p.vx *= 0.99; p.life -= dt * 0.55;
+      if (p.life <= 0) continue;
+      ctx.fillStyle = P.c(p.life * 0.85 * A, p.dh, 15);
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * S * 3 * (0.6 + p.life * 0.4), 0, Math.PI * 2); ctx.fill();
+    }
+    parts = parts.filter(p => p.life > 0 && p.y > -20 && p.x > -20 && p.x < W + 20);
+  }
+
+  // ---- 5. glow: the screen edges breathe with the bass, color drifts with the treble
+  function drawGlow(ctx, W, H, P, A, bass) {
+    let treble = 0; for (let i = 40; i < NB; i++) treble += shown[i]; treble /= NB - 40;
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * (0.42 - beat * 0.08), W / 2, H / 2, Math.hypot(W, H) / 1.7);
+    g.addColorStop(0, P.c(0, 0)); g.addColorStop(1, P.c((0.35 + bass * 0.55 + beat * 0.25) * A, treble * 90, 10));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+
+  // ---------- API used by the app ----------
+  window.setScreens = function (list) { screens = list; build(); };
+
+  window.applyState = function (s) {
+    const rebuild = s.src !== state.src || !!s.gif !== !!state.gif || (s.fpsLimit || 0) !== (state.fpsLimit || 0);
+    const sizeChanged = (s.widgets || {}).size !== (state.widgets || {}).size;
+    state = s;
+    if (rebuild || (!state.gif && vids.length !== screens.length)) build();
+    else { sync(); if (sizeChanged) placeOverlay(); }
+    renderWidgets();
+    if (!(state.viz || {}).enabled) vizC.getContext("2d").clearRect(0, 0, vizC.width, vizC.height);
+  };
+
+  setInterval(() => {   // keep secondary screens in sync
+    if (vids.length < 2 || state.paused) return;
+    const t = vids[0].currentTime;
+    for (let i = 1; i < vids.length; i++)
+      if (Math.abs(vids[i].currentTime - t) > 0.15) vids[i].currentTime = t;
+  }, 2000);
+
+  window.addEventListener("resize", build);
+  window.addEventListener("load", () => window.ready && window.ready());
+</script>
+</body>
+</html>
