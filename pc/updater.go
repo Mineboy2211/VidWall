@@ -13,12 +13,10 @@ import (
 	"time"
 )
 
-// Releases are published on GitHub. PC builds use tags like "pc-v1.8.0" with an asset "VidWallPC.exe".
+// Updates are described by updates.json in the GitHub repo (see README there).
 const (
 	appVersion  = "1.8.0"
-	releasesAPI = "https://api.github.com/repos/Mineboy2211/VidWall/releases?per_page=30"
-	tagPrefix   = "pc-v"
-	assetName   = "VidWallPC.exe"
+	manifestURL = "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/updates.json"
 )
 
 type UpdateState struct {
@@ -62,16 +60,11 @@ func newer(a, b string) bool {
 	return false
 }
 
-type ghRelease struct {
-	Tag        string `json:"tag_name"`
-	Body       string `json:"body"`
-	Draft      bool   `json:"draft"`
-	Prerelease bool   `json:"prerelease"`
-	Assets     []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-		Size int64  `json:"size"`
-	} `json:"assets"`
+type manifestEntry struct {
+	Version string `json:"version"`
+	URL     string `json:"url"`
+	Notes   string `json:"notes"`
+	Size    int64  `json:"size"`
 }
 
 // checkUpdate asks GitHub for the newest PC release. Safe to call from any goroutine.
@@ -85,9 +78,9 @@ func checkUpdate() {
 	upd.mu.Unlock()
 
 	err := func() error {
-		req, _ := http.NewRequest("GET", releasesAPI, nil)
-		req.Header.Set("Accept", "application/vnd.github+json")
+		req, _ := http.NewRequest("GET", fmt.Sprintf("%s?t=%d", manifestURL, time.Now().Unix()/300), nil)
 		req.Header.Set("User-Agent", "VidWallPC/"+appVersion)
+		req.Header.Set("Cache-Control", "no-cache")
 		c := &http.Client{Timeout: 20 * time.Second}
 		resp, err := c.Do(req)
 		if err != nil {
@@ -100,37 +93,21 @@ func checkUpdate() {
 		if resp.StatusCode != 200 {
 			return fmt.Errorf("GitHub : %s", resp.Status)
 		}
-		var rels []ghRelease
-		if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
-			return err
+		var m map[string]manifestEntry
+		if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+			return errors.New("fichier de mise à jour invalide")
 		}
-		best := ""
-		var pick *ghRelease
-		for i := range rels {
-			r := &rels[i]
-			if r.Draft || r.Prerelease || !strings.HasPrefix(r.Tag, tagPrefix) {
-				continue
-			}
-			v := strings.TrimPrefix(r.Tag, tagPrefix)
-			if best == "" || newer(v, best) {
-				best, pick = v, r
-			}
-		}
+		e := m["pc"]
 		upd.mu.Lock()
 		defer upd.mu.Unlock()
 		upd.Checked = time.Now().Unix()
-		if pick == nil || !newer(best, appVersion) {
+		upd.Latest = e.Version
+		if e.Version == "" || e.URL == "" || !newer(e.Version, appVersion) {
 			upd.Available = false
-			upd.Latest = best
 			return nil
 		}
-		for _, a := range pick.Assets {
-			if strings.EqualFold(a.Name, assetName) {
-				upd.Available, upd.Latest, upd.Notes, upd.URL, upd.Size = true, best, strings.TrimSpace(pick.Body), a.URL, a.Size
-				return nil
-			}
-		}
-		return errors.New("la nouvelle version n'a pas de fichier .exe")
+		upd.Available, upd.Notes, upd.URL, upd.Size = true, strings.TrimSpace(e.Notes), e.URL, e.Size
+		return nil
 	}()
 	upd.mu.Lock()
 	upd.Checking = false

@@ -16,11 +16,9 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Checks GitHub releases (tags "home-vX.Y") and installs the new APK. */
+/** Checks updates.json in the GitHub repo and installs the new APK. */
 public class Updater {
-    static final String API = "https://api.github.com/repos/Mineboy2211/VidWall/releases?per_page=30";
-    static final String PREFIX = "home-v";
-    static final String ASSET = "VidWallHome.apk";
+    static final String MANIFEST = "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/updates.json";
 
     public static String current(Context c) {
         try { return c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName; }
@@ -41,26 +39,12 @@ public class Updater {
     /** Blocking. Returns {version, url, notes} when an update exists, {"", "", error} on error, null when up to date. */
     public static String[] check(Context c) {
         try {
-            JSONArray rels = new JSONArray(P.get(API));
-            String best = null, url = null, notes = "";
-            for (int i = 0; i < rels.length(); i++) {
-                JSONObject r = rels.getJSONObject(i);
-                if (r.optBoolean("draft") || r.optBoolean("prerelease")) continue;
-                String tag = r.optString("tag_name");
-                if (!tag.startsWith(PREFIX)) continue;
-                String v = tag.substring(PREFIX.length());
-                if (best != null && !newer(v, best)) continue;
-                JSONArray as = r.optJSONArray("assets");
-                if (as == null) continue;
-                for (int j = 0; j < as.length(); j++) {
-                    JSONObject a = as.getJSONObject(j);
-                    if (ASSET.equalsIgnoreCase(a.optString("name"))) {
-                        best = v;
-                        url = a.optString("browser_download_url");
-                        notes = r.optString("body", "");
-                    }
-                }
-            }
+            JSONObject m = new JSONObject(P.get(MANIFEST + "?t=" + System.currentTimeMillis() / 300000));
+            JSONObject e = m.optJSONObject("home");
+            String best = e == null ? null : e.optString("version", null);
+            String url = e == null ? null : e.optString("url", null);
+            String notes = e == null ? "" : e.optString("notes", "");
+            if (url == null || url.isEmpty()) best = null;
             P.sp(c).edit().putLong("updChecked", System.currentTimeMillis()).apply();
             if (best == null || !newer(best, current(c))) return null;
             return new String[]{best, url, notes};

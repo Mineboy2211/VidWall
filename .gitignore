@@ -1,4 +1,3 @@
-*.exe
-*.apk
 build/
 *.idsig
+pc/*.exe

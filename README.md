@@ -10,7 +10,7 @@ Mets une vidéo ou un GIF en fond d'écran animé — sur **PC (Windows)** et **
 - Pauses intelligentes (plein écran, bureau caché, batterie), limite de fps
 - Export téléphone / GIF, mises à jour automatiques
 
-**Télécharger :** dernière release `pc-v…` → `VidWallPC.exe` (Windows 10/11 64 bits).
+**Télécharger :** [VidWallPC.exe](https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallPC.exe) (Windows 10/11 64 bits).
 
 ## 📱 VidWall Home (Android)
 - Launcher avec ta vidéo / GIF en fond d'écran animé système
@@ -18,9 +18,11 @@ Mets une vidéo ou un GIF en fond d'écran animé — sur **PC (Windows)** et **
 - Jour / nuit, widgets, visualiseur audio, menu d'app animé avec raccourcis
 - Mises à jour automatiques
 
-**Télécharger :** dernière release `home-v…` → `VidWallHome.apk`.
+**Télécharger :** [VidWallHome.apk](https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallHome.apk).
 
-## Releases
-Les apps vérifient elles-mêmes ce dépôt :
-- PC : tags `pc-vX.Y.Z` avec l'asset `VidWallPC.exe`
-- Android : tags `home-vX.Y` avec l'asset `VidWallHome.apk`
+## Publier une mise à jour
+1. Monter la version (`appVersion` dans `pc/updater.go`, `versionName`/`versionCode` dans `android/AndroidManifest.xml`).
+2. Remplacer le fichier dans `dist/`.
+3. Mettre à jour `updates.json` (version, notes, taille).
+
+Les apps lisent `updates.json` au démarrage et proposent la mise à jour toute seules.
