@@ -6,9 +6,9 @@
     "notes": "- VidWall se relance tout seul s'il se ferme (changement d'écran, redémarrage de l'explorateur…)\n- Le fond se recharge tout seul s'il devient blanc ou figé\n- Les plantages sont gardés dans log-precedent.txt"
   },
   "home": {
-    "version": "1.9",
+    "version": "1.9.1",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallHome.apk",
-    "size": 86590,
-    "notes": "- Le fond animé ne plante plus (GIF trop gros, vidéo coupée par un jeu ou la caméra)\n- La vidéo se relance toute seule si elle s'arrête\n- Si Android retire le fond animé, le launcher propose de le remettre"
+    "size": 90686,
+    "notes": "- Nouveaux visualiseurs audio comme sur PC : Spectre, Aurore, Anneau, Étoiles, Lueur\n- Détection des beats et volume automatique\n- Plus de barres symétriques : graves à gauche, aigus à droite"
   }
 }

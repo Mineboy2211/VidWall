@@ -609,7 +609,7 @@ public class HomeActivity extends Activity {
 
     private void startViz() {
         viz.color = sp.getInt("vizColor", P.ACCENT);
-        viz.style = sp.getString("vizStyle", "bars");
+        viz.style = sp.getString("vizStyle", "spectre");
         viz.sens = sp.getFloat("vizSens", 1f);
         if (sp.getBoolean("viz", false) && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             viz.setVisibility(View.VISIBLE);

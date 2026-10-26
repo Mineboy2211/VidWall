@@ -311,7 +311,9 @@ public class SettingsActivity extends Activity {
                     requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MIC);
             }
         });
-        seg(vz, new String[]{"Barres", "Onde", "Cercle"}, new String[]{"bars", "wave", "circle"}, sp.getString("vizStyle", "bars"), new OnPick() {
+        String curViz = sp.getString("vizStyle", "spectre");
+        if ("bars".equals(curViz)) curViz = "spectre"; else if ("wave".equals(curViz)) curViz = "aurore"; else if ("circle".equals(curViz)) curViz = "anneau";
+        seg(vz, new String[]{"Spectre", "Aurore", "Anneau", "Étoiles", "Lueur"}, new String[]{"spectre", "aurore", "anneau", "particules", "lueur"}, curViz, new OnPick() {
             @Override public void pick(String v) { sp.edit().putString("vizStyle", v).apply(); }
         });
         TextView cl = title("Couleur", 13, P.MUTED, false);
