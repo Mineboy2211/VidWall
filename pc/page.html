@@ -410,6 +410,9 @@
 
   window.addEventListener("resize", build);
   window.addEventListener("load", () => window.ready && window.ready());
+  // heartbeat: the app reloads this page if it stops answering (browser crash)
+  setInterval(() => fetch("/api/ping").catch(() => {}), 5000);
+  fetch("/api/ping").catch(() => {});
 </script>
 </body>
 </html>

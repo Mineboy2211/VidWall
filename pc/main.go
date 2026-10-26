@@ -3,23 +3,24 @@
 package main
 
 import (
-	"os/exec"
-	"strconv"
-	"strings"
-	"unicode/utf16"
-	"io"
-	"log"
-	"runtime/debug"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	webview2 "github.com/jchv/go-webview2"
@@ -197,11 +198,11 @@ const (
 )
 
 type Config struct {
-	Video      string `json:"video"`
-	Fit        string `json:"fit"`
-	Sound      bool   `json:"sound"`
-	Paused     bool   `json:"paused"`
-	AutoPause  bool   `json:"autoPause"`
+	Video      string   `json:"video"`
+	Fit        string   `json:"fit"`
+	Sound      bool     `json:"sound"`
+	Paused     bool     `json:"paused"`
+	AutoPause  bool     `json:"autoPause"`
 	AllScreens bool     `json:"allScreens"`
 	Volume     float64  `json:"volume"`
 	Speed      float64  `json:"speed"`
@@ -525,6 +526,7 @@ func handleCmd(cmd int) {
 	case cmdOpenUI:
 		showUI()
 	case cmdExit:
+		userQuit = true
 		log.Println("exit by user")
 		removeTray()
 		wv.Destroy()
@@ -595,6 +597,7 @@ func trayProc(h, msg, wp, lp uintptr) uintptr {
 		}
 		perfTick()
 		dayNightTick()
+		watchPage()
 		return 0
 	case msg == wmHotkey:
 		onHotkey(wp)
@@ -675,6 +678,10 @@ func startServer() {
 		}
 		_, _ = w.Write(b)
 	})
+	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
+		lastPing.Store(time.Now().Unix())
+		w.WriteHeader(204)
+	})
 	mux.HandleFunc("/api/do", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		a, k, v := q.Get("a"), q.Get("k"), q.Get("v")
@@ -692,6 +699,8 @@ func msgBox(text string) {
 func setupLog() {
 	dir := filepath.Join(os.Getenv("APPDATA"), "VidWallPC")
 	_ = os.MkdirAll(dir, 0755)
+	// keep the previous run's log: that's where the reason of a crash is
+	_ = os.Rename(filepath.Join(dir, "log.txt"), filepath.Join(dir, "log-precedent.txt"))
 	f, err := os.OpenFile(filepath.Join(dir, "log.txt"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err == nil {
 		log.SetOutput(io.MultiWriter(os.Stderr, f))
@@ -702,6 +711,10 @@ func setupLog() {
 
 func main() {
 	runtime.LockOSThread()
+	if !isChild() {
+		runGuard() // restarts the app if it closes by itself
+		return
+	}
 	setupLog()
 	defer func() {
 		if c, _, _ := kernel32.NewProc("GetConsoleWindow").Call(); c != 0 {
@@ -712,7 +725,8 @@ func main() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC: %v\n%s", r, debug.Stack())
-			msgBox(fmt.Sprintf("VidWall a planté :\n%v\n\nLog : %%APPDATA%%\\VidWallPC\\log.txt", r))
+			removeTray()
+			os.Exit(2) // the guard restarts it
 		}
 	}()
 	updated := false
@@ -825,13 +839,16 @@ func main() {
 
 	log.Println("run loop")
 	wv.Run()
-	log.Println("run loop ended")
+	log.Println("run loop ended, user quit:", userQuit)
 	removeTray()
-	if !restarting {
+	if userQuit && !restarting {
 		restoreWallpaper()
 	}
+	if userQuit || restarting {
+		os.Exit(exitUserQuit)
+	}
+	os.Exit(exitUnexpected) // e.g. Windows rebuilt the desktop and destroyed our window
 }
-
 
 // ---------- settings window ----------
 
@@ -871,7 +888,7 @@ func stateJSON() []byte {
 		"paused": cfg.Paused, "autoPaused": autoPaused, "autoPause": cfg.AutoPause,
 		"allScreens": cfg.AllScreens, "startup": startupEnabled(), "recent": items,
 		"screens": len(monitors()),
-		"autoHD": cfg.AutoHD, "hdStyle": cfg.HDStyle, "isHD": isHD(cfg.Video),
+		"autoHD":  cfg.AutoHD, "hdStyle": cfg.HDStyle, "isHD": isHD(cfg.Video),
 		"targetW": tw, "targetH": th, "job": job.snapshot(),
 		"dayNight": cfg.DayNight, "period": currentPeriod(), "dayBounds": []int{db0, db1},
 		"widgets": cfg.Widgets, "weather": weather.snapshot(), "viz": cfg.Viz,
@@ -1138,8 +1155,8 @@ func createUI() {
 	uiHwnd = uintptr(ui.Window())
 	pShowWindow.Call(uiHwnd, 0)
 	uiOrigProc, _, _ = pSetWindowLongPtrW.Call(uiHwnd, ^uintptr(3), syscall.NewCallback(uiProc)) // GWLP_WNDPROC
-	pSendMessageW.Call(uiHwnd, 0x0080, 1, trayIcon) // WM_SETICON big
-	pSendMessageW.Call(uiHwnd, 0x0080, 0, trayIcon) // small
+	pSendMessageW.Call(uiHwnd, 0x0080, 1, trayIcon)                                              // WM_SETICON big
+	pSendMessageW.Call(uiHwnd, 0x0080, 0, trayIcon)                                              // small
 	dark := int32(1)
 	pDwmSetWindowAttr.Call(uiHwnd, 20, uintptr(unsafe.Pointer(&dark)), 4)
 	ui.Navigate(fmt.Sprintf("http://127.0.0.1:%d/ui", port))
@@ -1157,7 +1174,6 @@ func showUI() {
 	pSetForegroundWindow.Call(uiHwnd)
 	ui.Eval("window.onShown && onShown()")
 }
-
 
 // ---------- AI upscale integration ----------
 
@@ -1177,7 +1193,6 @@ func targetRes() (int, int) {
 	return w, h
 }
 
-
 func hotkeyNames() []string {
 	var n []string
 	for _, h := range hotkeys {
@@ -1187,3 +1202,28 @@ func hotkeyNames() []string {
 }
 
 var restarting bool
+
+// ---------- watchdog for the wallpaper page ----------
+// The page pings every 5 s. If the browser part crashed (blank wallpaper), reload it.
+
+var (
+	lastPing atomic.Int64
+	lastTick time.Time
+)
+
+func watchPage() {
+	now := time.Now()
+	if !lastTick.IsZero() && now.Sub(lastTick) > 10*time.Second {
+		lastPing.Store(now.Unix()) // PC was asleep: give the page time to wake up
+	}
+	lastTick = now
+	lp := lastPing.Load()
+	if lp == 0 {
+		return // page not loaded yet
+	}
+	if now.Unix()-lp > 30 {
+		log.Println("wallpaper page not responding: reloading it")
+		lastPing.Store(now.Unix())
+		wv.Navigate(fmt.Sprintf("http://127.0.0.1:%d/?r=%d", port, now.Unix()))
+	}
+}

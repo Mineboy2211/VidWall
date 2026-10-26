@@ -14,6 +14,8 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.service.wallpaper.WallpaperService;
 import android.view.Choreographer;
+import android.graphics.Rect;
+import android.util.Log;
 import android.view.SurfaceHolder;
 
 import java.io.File;
@@ -39,29 +41,61 @@ public class VideoWallpaperService extends WallpaperService {
         private int fmt = PixelFormat.RGBX_8888;
         private long lastGifFrame;
         private final Handler h = new Handler(Looper.getMainLooper());
+        private int errors;
+        private long errorsSince;
+
+        // If a live wallpaper crashes, Android removes it and puts the default wallpaper back.
+        // So nothing in here is allowed to crash: every callback is guarded.
+        private void guard(String where, Runnable r) {
+            try { r.run(); } catch (Throwable t) { Log.w("VidWall", "wallpaper " + where, t); }
+        }
+
+        // the video stopped (decoder taken by a game/camera, media server restarted…): reload it
+        private final Runnable reload = new Runnable() {
+            @Override public void run() {
+                guard("reload", new Runnable() { @Override public void run() {
+                    loadedKey = "";
+                    load();
+                    if (visible) play();
+                }});
+            }
+        };
+
+        private void scheduleReload() {
+            long now = System.currentTimeMillis();
+            if (now - errorsSince > 60000) { errorsSince = now; errors = 0; }
+            errors++;
+            h.removeCallbacks(reload);
+            h.postDelayed(reload, errors <= 5 ? 1200 : 15000);
+        }
 
         private final Choreographer.FrameCallback gifLoop = new Choreographer.FrameCallback() {
             @Override public void doFrame(long t) {
                 if (!visible || gif == null || !surfaceReady) return;
                 long now = System.currentTimeMillis();
-                if (now - lastGifFrame >= 30) { lastGifFrame = now; drawGif(); }
+                if (now - lastGifFrame >= 30) { lastGifFrame = now; try { drawGif(); } catch (Throwable ignored) {} }
                 Choreographer.getInstance().postFrameCallback(this);
             }
         };
 
         @Override
-        public void onCreate(SurfaceHolder sh) {
+        public void onCreate(final SurfaceHolder sh) {
             super.onCreate(sh);
             sp = P.sp(VideoWallpaperService.this);
-            sp.registerOnSharedPreferenceChangeListener(this);
-            setOffsetNotificationsEnabled(false);
-            sh.setFormat(fmt);
+            guard("create", new Runnable() { @Override public void run() {
+                sp.registerOnSharedPreferenceChangeListener(VEngine.this);
+                setOffsetNotificationsEnabled(false);
+                sh.setFormat(fmt);
+            }});
         }
 
         @Override
         public void onDestroy() {
-            sp.unregisterOnSharedPreferenceChangeListener(this);
-            release();
+            h.removeCallbacks(reload);
+            guard("destroy", new Runnable() { @Override public void run() {
+                if (sp != null) sp.unregisterOnSharedPreferenceChangeListener(VEngine.this);
+                release();
+            }});
             super.onDestroy();
         }
 
@@ -72,33 +106,36 @@ public class VideoWallpaperService extends WallpaperService {
             surfaceReady = true;
             canvasUsed = mediaUsed = false;
             loadedKey = "";
-            load();
+            guard("surfaceCreated", new Runnable() { @Override public void run() { load(); if (visible) play(); }});
         }
 
         @Override
         public void onSurfaceChanged(SurfaceHolder sh, int f, int w, int hh) {
             super.onSurfaceChanged(sh, f, w, hh);
-            if (gifMode) drawGif();
+            if (gifMode) guard("surfaceChanged", new Runnable() { @Override public void run() { drawGif(); }});
         }
 
         @Override
         public void onSurfaceDestroyed(SurfaceHolder sh) {
             surfaceReady = false;
-            release();
+            h.removeCallbacks(reload);
+            guard("surfaceDestroyed", new Runnable() { @Override public void run() { release(); }});
             loadedKey = "";
             super.onSurfaceDestroyed(sh);
         }
 
         @Override
-        public void onVisibilityChanged(boolean v) {
+        public void onVisibilityChanged(final boolean v) {
             visible = v;
-            if (v) {
-                checkDayNight();
-                load();
-                play();
-            } else {
-                pause();
-            }
+            guard("visibility", new Runnable() { @Override public void run() {
+                if (v) {
+                    checkDayNight();
+                    load();
+                    play();
+                } else {
+                    pause();
+                }
+            }});
         }
 
         @Override
@@ -106,10 +143,10 @@ public class VideoWallpaperService extends WallpaperService {
             if (key == null) return;
             switch (key) {
                 case "active": case "fit": case "sound": case "speed":
-                    h.post(new Runnable() { @Override public void run() { load(); if (visible) play(); } });
+                    h.post(new Runnable() { @Override public void run() { guard("pref", new Runnable() { @Override public void run() { load(); if (visible) play(); }}); } });
                     break;
                 case "paused": case "saver":
-                    h.post(new Runnable() { @Override public void run() { if (visible) play(); } });
+                    h.post(new Runnable() { @Override public void run() { guard("pref", new Runnable() { @Override public void run() { if (visible) play(); }}); } });
                     break;
             }
         }
@@ -136,7 +173,10 @@ public class VideoWallpaperService extends WallpaperService {
             if (!surfaceReady || holder == null) return;
             String path = P.active(VideoWallpaperService.this);
             String key = path + "|" + sp.getString("fit", "cover") + "|" + sp.getBoolean("sound", false) + "|" + sp.getFloat("speed", 1f);
-            if (key.equals(loadedKey)) return;
+            // same file, but the player died or the GIF was dropped: load it again
+            boolean healthy = path.isEmpty() || (P.isGif(path) ? gif != null : mp != null);
+            if (key.equals(loadedKey) && healthy) return;
+            if (!path.isEmpty() && !new File(path).exists()) { loadedKey = key; release(); drawBlack(); return; }
             boolean wantGif = P.isGif(path);
             // MediaPlayer and canvas drawing can't share one surface: switching type asks for a new surface
             boolean needCanvas = wantGif || path.isEmpty();
@@ -154,12 +194,26 @@ public class VideoWallpaperService extends WallpaperService {
             if (path.isEmpty()) { drawBlack(); return; }
             if (wantGif) {
                 try {
-                    gif = ImageDecoder.decodeDrawable(ImageDecoder.createSource(new File(path)));
+                    // decode at screen size: a huge upscaled GIF must not run the wallpaper out of memory
+                    final Rect fr = holder.getSurfaceFrame();
+                    gif = ImageDecoder.decodeDrawable(ImageDecoder.createSource(new File(path)), new ImageDecoder.OnHeaderDecodedListener() {
+                        @Override public void onHeaderDecoded(ImageDecoder d, ImageDecoder.ImageInfo info, ImageDecoder.Source src) {
+                            int iw = info.getSize().getWidth(), ih = info.getSize().getHeight();
+                            int sw = Math.max(1, Math.max(fr.width(), fr.height())), longest = Math.max(iw, ih);
+                            if (longest > sw && sw > 1) {
+                                float k = (float) sw / longest;
+                                d.setTargetSize(Math.max(1, Math.round(iw * k)), Math.max(1, Math.round(ih * k)));
+                            }
+                            d.setAllocator(ImageDecoder.ALLOCATOR_DEFAULT);
+                        }
+                    });
                     if (gif instanceof AnimatedImageDrawable) {
                         ((AnimatedImageDrawable) gif).setRepeatCount(AnimatedImageDrawable.REPEAT_INFINITE);
                     }
                     drawGif();
-                } catch (Exception e) {
+                } catch (Throwable e) {
+                    Log.w("VidWall", "gif", e);
+                    gif = null;
                     drawBlack();
                 }
             } else {
@@ -180,15 +234,22 @@ public class VideoWallpaperService extends WallpaperService {
                             if (speed != 1f) {
                                 try { p.setPlaybackParams(new PlaybackParams().setSpeed(speed)); } catch (Exception ignored) {}
                             }
-                            if (shouldPlay()) p.start(); else p.seekTo(0);
+                            errors = 0;
+                            try { if (shouldPlay()) p.start(); else p.seekTo(0); } catch (Throwable ignored) {}
                         }
                     });
                     m.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-                        @Override public boolean onError(MediaPlayer p, int a, int b) { return true; }
+                        @Override public boolean onError(MediaPlayer p, int a, int b) {
+                            Log.w("VidWall", "player error " + a + "/" + b);
+                            if (p == mp) { try { p.release(); } catch (Throwable ignored) {} mp = null; scheduleReload(); }
+                            return true;
+                        }
                     });
                     m.prepareAsync();
-                } catch (Exception e) {
+                } catch (Throwable e) {
+                    Log.w("VidWall", "player", e);
                     release();
+                    scheduleReload();
                 }
             }
         }
@@ -197,7 +258,7 @@ public class VideoWallpaperService extends WallpaperService {
             if (!shouldPlay()) { pause(); return; }
             try { if (mp != null && !mp.isPlaying()) mp.start(); } catch (Exception ignored) {}
             if (gif instanceof AnimatedImageDrawable) {
-                ((AnimatedImageDrawable) gif).start();
+                try { ((AnimatedImageDrawable) gif).start(); } catch (Throwable ignored) {}
                 Choreographer.getInstance().removeFrameCallback(gifLoop);
                 Choreographer.getInstance().postFrameCallback(gifLoop);
             }
@@ -233,9 +294,9 @@ public class VideoWallpaperService extends WallpaperService {
                 c.drawColor(Color.BLACK);
                 gif.setBounds((W - w) / 2, (H - hh) / 2, (W - w) / 2 + w, (H - hh) / 2 + hh);
                 gif.draw(c);
-            } catch (Exception ignored) {
+            } catch (Throwable ignored) {
             } finally {
-                if (c != null) try { holder.getSurface().unlockCanvasAndPost(c); } catch (Exception ignored) {}
+                if (c != null) try { holder.getSurface().unlockCanvasAndPost(c); } catch (Throwable ignored) {}
             }
         }
 

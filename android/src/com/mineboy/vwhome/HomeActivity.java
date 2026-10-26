@@ -315,7 +315,10 @@ public class HomeActivity extends Activity {
         resumed = true;
         sysWall = isOurWallpaper();
         root.setBackgroundColor(sysWall ? Color.TRANSPARENT : Color.BLACK);
-        maybeAskWallpaper();
+        boolean was = sp.getBoolean("wallWasOurs", false);
+        if (was != sysWall) sp.edit().putBoolean("wallWasOurs", sysWall).apply();
+        if (was && !sysWall) offerWallpaperBack();
+        else maybeAskWallpaper();
         if (keptST != null && tex.getSurfaceTexture() != keptST) {
             try { tex.setSurfaceTexture(keptST); } catch (Exception ignored) {}
         }
@@ -423,6 +426,17 @@ public class HomeActivity extends Activity {
         } catch (Exception e) {
             try { a.startActivity(new Intent(android.app.WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)); } catch (Exception ignored) {}
         }
+    }
+
+    // Android removed our live wallpaper (it does that when a wallpaper crashes): offer to put it back
+    private void offerWallpaperBack() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Fond animé retiré")
+                .setMessage("Android a remis le fond d'écran par défaut. Tu veux remettre ta vidéo ?")
+                .setPositiveButton("Remettre", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface d, int w) { askSetWallpaper(HomeActivity.this); }
+                })
+                .setNegativeButton("Non", null).show();
     }
 
     private void maybeAskWallpaper() {

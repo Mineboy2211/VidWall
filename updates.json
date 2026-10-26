@@ -1,14 +1,14 @@
 {
   "pc": {
-    "version": "1.8.0",
+    "version": "1.9.0",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallPC.exe",
-    "size": 7675904,
-    "notes": "- Nouveaux visualiseurs audio : Spectre, Aurore, Anneau, Particules, Lueur\n- Détection des beats et volume automatique\n- Beaucoup moins de lag\n- Mises à jour automatiques"
+    "size": 7685632,
+    "notes": "- VidWall se relance tout seul s'il se ferme (changement d'écran, redémarrage de l'explorateur…)\n- Le fond se recharge tout seul s'il devient blanc ou figé\n- Les plantages sont gardés dans log-precedent.txt"
   },
   "home": {
-    "version": "1.8",
+    "version": "1.9",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallHome.apk",
-    "size": 82494,
-    "notes": "- Fond d'écran animé système (transitions fluides)\n- Liste d'apps qui suit le doigt, accueil sans dock\n- Menu d'app animé avec raccourcis\n- Mises à jour automatiques"
+    "size": 86590,
+    "notes": "- Le fond animé ne plante plus (GIF trop gros, vidéo coupée par un jeu ou la caméra)\n- La vidéo se relance toute seule si elle s'arrête\n- Si Android retire le fond animé, le launcher propose de le remettre"
   }
 }
