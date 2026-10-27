@@ -339,11 +339,14 @@ func monitors() []mon {
 func attach() {
 	worker := findWorkerW()
 	log.Println("attach worker", worker)
-	pSetParent.Call(wvHwnd, worker)
-	pSetWindowLongPtrW.Call(wvHwnd, gwlStyleU, wsChild|wsVisible)
+	// change everything while the window is hidden, then show it once, already in place:
+	// otherwise it can appear for a moment as a normal window over the desktop
+	pShowWindow.Call(wvHwnd, 0)
+	pSetWindowLongPtrW.Call(wvHwnd, gwlStyleU, wsChild)
 	ex, _, _ := pGetWindowLongPtrW.Call(wvHwnd, gwlExStyleU)
 	pSetWindowLongPtrW.Call(wvHwnd, gwlExStyleU, ex|wsExToolWin|wsExNoActive)
-	layout(worker)
+	pSetParent.Call(wvHwnd, worker)
+	layout(worker) // positions it and shows it (SWP_SHOWWINDOW)
 }
 
 func layout(worker uintptr) {

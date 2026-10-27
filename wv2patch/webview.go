@@ -338,6 +338,10 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 	// may never draw), but showing it on screen gives a white flash. So it is created visible but
 	// off-screen, then hidden and put back in place: the app shows it when it wants.
 	hidden := os.Getenv("WV2_START_HIDDEN") == "1"
+	if hidden { // no fade-in/out animations: they made the window visible for a moment
+		on := int32(1)
+		_, _, _ = dwmSetWindowAttribute.Call(w.hwnd, 3, uintptr(unsafe.Pointer(&on)), 4) // DWMWA_TRANSITIONS_FORCEDISABLED
+	}
 	var wr struct{ L, T, R, B int32 }
 	if hidden {
 		_, _, _ = getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&wr)))
@@ -498,3 +502,5 @@ func (w *webview) Bind(name string, f interface{}) error {
 }
 
 var getWindowRect = windows.NewLazySystemDLL("user32.dll").NewProc("GetWindowRect")
+
+var dwmSetWindowAttribute = windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmSetWindowAttribute")
