@@ -50,7 +50,8 @@ type VizCfg struct {
 	Style   string  `json:"style"` // bars | wave | circle | glow
 	Color   string  `json:"color"`
 	Sens    float64 `json:"sens"`
-	Pos     string  `json:"pos"` // bottom | center
+	Pos     string  `json:"pos"`    // bottom | center
+	Source  string  `json:"source"` // "" = all PC sound, "app:discord.exe", "out:<id>", "in:<id>"
 }
 
 func (c *Config) defaults() {
@@ -497,7 +498,7 @@ func sortStrings(a []string) {
 
 type powerStatus struct {
 	ACLine, BatteryFlag, Percent, Saver byte
-	LifeTime, FullLifeTime          uint32
+	LifeTime, FullLifeTime              uint32
 }
 
 // onBattery: true when unplugged; hasBattery: false on desktops

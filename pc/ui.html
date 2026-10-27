@@ -17,7 +17,7 @@
     overflow: hidden; user-select: none; -webkit-user-select: none;
   }
   button { font-family: inherit; }
-  .app { display: grid; grid-template-columns: 1fr 330px; gap: 18px; height: 100%; padding: 18px 20px 20px; }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; height: 100%; padding: 18px 20px 20px; }
   .main { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
 
   header { display: flex; align-items: center; gap: 12px; }
@@ -89,7 +89,8 @@
   .card { background: var(--card); border: 1px solid var(--card-b); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .card h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
   .card p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  #vStyle { grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 2px; }
   .row + .row { border-top: 1px solid rgba(255,255,255,.05); }
   .row .t { font-size: 14px; } .row .d { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -114,6 +115,10 @@
   input[type=text], input[type=time] { background: rgba(0,0,0,.3); border: 1px solid var(--card-b); color: var(--text); border-radius: 10px;
                      padding: 8px 10px; font: 13.5px inherit; font-family: inherit; outline: none; color-scheme: dark; }
   input[type=text]:focus, input[type=time]:focus { border-color: var(--accent); }
+  select { background: rgba(0,0,0,.3); border: 1px solid var(--card-b); color: var(--text); border-radius: 10px; padding: 8px 10px;
+           font: inherit; font-size: 13px; outline: none; max-width: 100%; cursor: pointer; }
+  select:focus { border-color: var(--accent); }
+  select option, select optgroup { background: #151935; color: var(--text); }
   .val { font-size: 12.5px; color: var(--accent2); font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
   .spacer { flex: 1; }
   .foot { font-size: 11.5px; color: var(--muted); text-align: center; margin-top: 8px; }
@@ -290,8 +295,11 @@
         </div>
         <div class="card">
           <h3>🎵 Visualiseur audio</h3>
-          <p>Réagit à la musique qui joue sur ton PC (Spotify, YouTube, jeux…).</p>
+          <p>Réagit au son de ton PC, d'une seule appli (Discord, Spotify…) ou d'un micro.</p>
           <div class="row"><div class="t">Activer</div><label class="sw"><input type="checkbox" id="vOn"><i></i></label></div>
+          <div class="row" style="gap:10px;flex-wrap:wrap"><div style="flex:1 1 100%"><div class="t">Source du son</div><div class="d" id="vSrcStatus"></div></div>
+            <div style="display:flex;gap:6px;align-items:center;flex:1 1 100%;min-width:0"><select id="vSrc" style="flex:1;min-width:0"></select>
+            <button class="btn ghost" title="Actualiser la liste" onclick="loadSources()" style="padding:7px 10px">⟳</button></div></div>
           <div class="seg" id="vStyle"><button data-v="spectre">Spectre</button><button data-v="aurore">Aurore</button><button data-v="anneau">Anneau</button><button data-v="particules">Particules</button><button data-v="lueur">Lueur</button></div>
           <div class="row"><div class="t">Position</div><div class="seg" id="vPos" style="width:190px"><button data-v="bottom">En bas</button><button data-v="center">Centre</button></div></div>
           <div class="row"><div class="t">Couleur</div><div class="swatches" id="vColor"></div></div>
@@ -715,6 +723,8 @@
     segShow('wPos', W.pos); segShow('wSize', W.size);
     $('vOn').checked = V.enabled; segShow('vStyle', ({bars:'spectre',wave:'aurore',circle:'anneau',glow:'lueur'})[V.style] || V.style); segShow('vPos', V.pos); segShow('vColor', V.color);
     if (!dragging) $('vSens').value = V.sens; $('vSensv').textContent = 'x' + (+$('vSens').value).toFixed(1);
+    $('vSrcStatus').textContent = V.enabled ? (S.audioStatus || '') : '';
+    if (!SRC) loadSources(); else fillSources();
     $('hk').checked = S.hotkeys;
     $('hkList').innerHTML = (S.hotkeyList || []).map(h => { const [k, d] = h.split(' : '); return `<div>${k.split('+').map(x => `<kbd>${x}</kbd>`).join(' + ')} &nbsp; ${esc(d)}</div>`; }).join('');
     $('hkList').style.opacity = S.hotkeys ? 1 : .45;
@@ -723,6 +733,27 @@
     $(id).onchange = e => set(k, e.target.checked);
   $('wCity').onkeydown = e => { if (e.key === 'Enter') set('w.city', $('wCity').value); };
   segBind('wSize', 'w.size'); segBind('vStyle', 'viz.style'); segBind('vPos', 'viz.pos');
+
+  // ---------- visualizer sound source ----------
+  let SRC = null;
+  async function loadSources() {
+    try { SRC = await (await fetch('/api/audiosources')).json(); } catch { return; }
+    fillSources();
+  }
+  function fillSources() {
+    const cur = (S.viz && S.viz.source) || '', sel = $('vSrc');
+    if (!SRC || document.activeElement === sel) return;
+    const opt = (v, t) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`;
+    let h = opt('', '🔊 Tout le son du PC');
+    const apps = (SRC.apps || []).slice();
+    if (cur.startsWith('app:') && !apps.some(a => 'app:' + a.exe === cur)) apps.push({exe: cur.slice(4), name: cur.slice(4).replace(/\.exe$/, ''), playing: false});
+    if (SRC.appsOK && apps.length) h += '<optgroup label="Une seule application">' + apps.map(a => opt('app:' + a.exe, (a.playing ? '🎵 ' : '') + a.name)).join('') + '</optgroup>';
+    h += '<optgroup label="Une sortie (casque, haut-parleurs…)">' + (SRC.outputs || []).map(d => opt('out:' + d.id, d.name + (d.default ? ' (par défaut)' : ''))).join('') + '</optgroup>';
+    h += '<optgroup label="Un micro / une entrée">' + (SRC.inputs || []).map(d => opt('in:' + d.id, '🎙 ' + d.name + (d.default ? ' (par défaut)' : ''))).join('') + '</optgroup>';
+    sel.innerHTML = h;
+    sel.value = cur;
+  }
+  $('vSrc').onchange = e => set('viz.source', e.target.value);
 
   // ---------- performance / share ----------
   function renderUpdate() {

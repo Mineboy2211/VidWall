@@ -392,6 +392,7 @@ func applyState() {
 	st := map[string]any{"src": src, "fit": cfg.Fit, "sound": cfg.Sound, "paused": paused,
 		"volume": cfg.Volume, "speed": cfg.Speed, "gif": isGif(cfg.Video),
 		"widgets": cfg.Widgets, "weather": weather.snapshot(), "viz": cfg.Viz, "fpsLimit": cfg.FPSLimit}
+	viz.setSource(cfg.Viz.Source)
 	viz.setEnabled(cfg.Viz.Enabled && !paused)
 	b, _ := json.Marshal(st)
 	wv.Eval(fmt.Sprintf("window.applyState && applyState(%s)", b))
@@ -681,6 +682,11 @@ func startServer() {
 		}
 		_, _ = w.Write(b)
 	})
+	mux.HandleFunc("/api/audiosources", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(listAudioSources())
+	})
 	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
 		lastPing.Store(time.Now().Unix())
 		w.WriteHeader(204)
@@ -915,7 +921,7 @@ func stateJSON() []byte {
 		"autoHD":  cfg.AutoHD, "hdStyle": cfg.HDStyle, "isHD": isHD(cfg.Video),
 		"targetW": tw, "targetH": th, "job": job.snapshot(),
 		"dayNight": cfg.DayNight, "period": currentPeriod(), "dayBounds": []int{db0, db1},
-		"widgets": cfg.Widgets, "weather": weather.snapshot(), "viz": cfg.Viz,
+		"widgets": cfg.Widgets, "weather": weather.snapshot(), "viz": cfg.Viz, "audioStatus": viz.getStatus(),
 		"hotkeys": cfg.Hotkeys, "hotkeyList": hotkeyNames(),
 		"batteryPause": cfg.BatteryPause, "coveredPause": cfg.CoveredPause, "fpsLimit": cfg.FPSLimit,
 		"pauseReason": pauseReason, "hasBattery": hasBat, "onBattery": onBat,
@@ -1122,6 +1128,9 @@ func apiDo(a, k, v string, i int) {
 			}
 		case "viz.pos":
 			cfg.Viz.Pos = v
+		case "viz.source":
+			cfg.Viz.Source = v
+			viz.setSource(v)
 		case "hotkeys":
 			cfg.Hotkeys = on
 			registerHotkeys(on)

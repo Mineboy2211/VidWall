@@ -1,9 +1,9 @@
 {
   "pc": {
-    "version": "1.9.5",
+    "version": "1.9.6",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallPC.exe",
-    "size": 8110592,
-    "notes": "- Écran de chargement au lancement (fini le flash blanc)\n- La fenêtre des réglages apparaît seulement quand elle est prête"
+    "size": 8152576,
+    "notes": "- Visualiseur : choisis la source du son (tout le PC, une seule appli comme Discord ou Spotify, une sortie, ou un micro)\n- Réglages mieux rangés sur les petites fenêtres"
   },
   "home": {
     "version": "1.9.1",

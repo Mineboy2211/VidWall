@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -57,6 +58,42 @@ type audioViz struct {
 	mu      sync.Mutex
 	enabled bool
 	levels  []float64
+	source  string // see audiosrc_windows.go
+	restart bool   // source changed: reopen the capture
+	status  string // shown in the settings ("Écoute : Discord", or an error)
+}
+
+func (a *audioViz) setSource(src string) {
+	a.mu.Lock()
+	if src != a.source {
+		a.source, a.restart = src, true
+	}
+	a.mu.Unlock()
+}
+
+func (a *audioViz) getSource() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.restart = false
+	return a.source
+}
+
+func (a *audioViz) mustRestart() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.restart
+}
+
+func (a *audioViz) setStatus(s string) {
+	a.mu.Lock()
+	a.status = s
+	a.mu.Unlock()
+}
+
+func (a *audioViz) getStatus() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.status
 }
 
 var viz = &audioViz{levels: make([]float64, 64)}
@@ -86,31 +123,89 @@ func startAudio(send func([]float64)) {
 			err := captureLoop(send)
 			if err != nil {
 				log.Println("audio:", err)
+				viz.setStatus("⚠ " + err.Error())
 			}
-			time.Sleep(1500 * time.Millisecond)
+			for i := 0; i < 15 && !viz.mustRestart(); i++ { // retry in 1.5 s, or right away if the source changed
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 	}()
 }
 
 func captureLoop(send func([]float64)) error {
 	var enum, dev, client, capture uintptr
-	defer func() { comRelease(capture); comRelease(client); comRelease(dev); comRelease(enum) }()
+	var event windows.Handle
+	defer func() {
+		comRelease(capture)
+		comRelease(client)
+		comRelease(dev)
+		comRelease(enum)
+		if event != 0 {
+			windows.CloseHandle(event)
+		}
+	}()
 
 	if hr, _, _ := pCoCreateInstance.Call(uintptr(unsafe.Pointer(&clsidMMDeviceEnum)), 0, 23,
 		uintptr(unsafe.Pointer(&iidIMMDeviceEnum)), uintptr(unsafe.Pointer(&enum))); hr != 0 {
 		return errors.New("CoCreateInstance failed")
 	}
-	if hr := comCall(enum, 4, 0, 0, uintptr(unsafe.Pointer(&dev))); hr != 0 { // GetDefaultAudioEndpoint(eRender, eConsole)
-		return errors.New("no default audio device")
-	}
-	if hr := comCall(dev, 3, uintptr(unsafe.Pointer(&iidIAudioClient)), 23, 0, uintptr(unsafe.Pointer(&client))); hr != 0 {
-		return errors.New("Activate failed")
-	}
+	src := viz.getSource()
+	const loopback, eventCB, autoConvert, srcDefault = 0x00020000, 0x00040000, 0x80000000, 0x08000000
+	flags := uintptr(loopback)
+	label := "tout le son du PC"
 	var pwfx *waveFormatEx
-	if hr := comCall(client, 8, uintptr(unsafe.Pointer(&pwfx))); hr != 0 || pwfx == nil { // GetMixFormat
-		return errors.New("GetMixFormat failed")
+	appMode := strings.HasPrefix(src, "app:")
+	getDev := func(id string, flow uintptr) error {
+		if id != "" {
+			p, _ := windows.UTF16PtrFromString(id)
+			if comCall(enum, 5, uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(&dev))) == 0 { // GetDevice
+				return nil
+			}
+		}
+		if hr := comCall(enum, 4, flow, 0, uintptr(unsafe.Pointer(&dev))); hr != 0 { // GetDefaultAudioEndpoint
+			return errors.New("aucun périphérique audio")
+		}
+		return nil
 	}
-	defer pCoTaskMemFree.Call(uintptr(unsafe.Pointer(pwfx)))
+	switch {
+	case appMode:
+		exe := strings.TrimPrefix(src, "app:")
+		label = appName(exe)
+		pid, ok := rootProcess(exe)
+		if !ok {
+			return errors.New(label + " n'est pas lancé")
+		}
+		c, err := activateProcessLoopback(pid)
+		if err != nil {
+			return err
+		}
+		client = c
+		// process loopback has no mix format: ask for 48 kHz stereo 16-bit
+		pwfx = &waveFormatEx{FormatTag: 1, Channels: 2, SamplesPerSec: 48000, AvgBytesPerSec: 48000 * 4, BlockAlign: 4, BitsPerSample: 16}
+		flags = loopback | eventCB | autoConvert | srcDefault
+	case strings.HasPrefix(src, "in:"):
+		if err := getDev(strings.TrimPrefix(src, "in:"), 1); err != nil {
+			return err
+		}
+		flags = 0
+		label = "micro : " + deviceName(dev)
+	default:
+		if err := getDev(strings.TrimPrefix(src, "out:"), 0); err != nil {
+			return err
+		}
+		if src != "" {
+			label = "sortie : " + deviceName(dev)
+		}
+	}
+	if !appMode {
+		if hr := comCall(dev, 3, uintptr(unsafe.Pointer(&iidIAudioClient)), 23, 0, uintptr(unsafe.Pointer(&client))); hr != 0 {
+			return errors.New("Activate failed")
+		}
+		if hr := comCall(client, 8, uintptr(unsafe.Pointer(&pwfx))); hr != 0 || pwfx == nil { // GetMixFormat
+			return errors.New("GetMixFormat failed")
+		}
+		defer pCoTaskMemFree.Call(uintptr(unsafe.Pointer(pwfx)))
+	}
 	ch := int(pwfx.Channels)
 	rate := float64(pwfx.SamplesPerSec)
 	bits := int(pwfx.BitsPerSample)
@@ -119,9 +214,12 @@ func captureLoop(send func([]float64)) error {
 		sub := *(*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(pwfx)) + 24))
 		isFloat = sub == 3
 	}
-	const loopback = 0x00020000
-	if hr := comCall(client, 3, 0, loopback, uintptr(2000000), 0, uintptr(unsafe.Pointer(pwfx)), 0); hr != 0 { // Initialize (200 ms buffer)
-		return errors.New("Initialize failed")
+	if hr := comCall(client, 3, 0, flags, uintptr(2000000), 0, uintptr(unsafe.Pointer(pwfx)), 0); hr != 0 { // Initialize (200 ms buffer)
+		return errors.New("impossible d'ouvrir la source du son")
+	}
+	if flags&eventCB != 0 {
+		event, _ = windows.CreateEvent(nil, 0, 0, nil)
+		comCall(client, 13, uintptr(event)) // SetEventHandle
 	}
 	if hr := comCall(client, 14, uintptr(unsafe.Pointer(&iidIAudioCapture)), uintptr(unsafe.Pointer(&capture))); hr != 0 {
 		return errors.New("GetService failed")
@@ -130,7 +228,8 @@ func captureLoop(send func([]float64)) error {
 		return errors.New("Start failed")
 	}
 	defer comCall(client, 11) // Stop
-	log.Printf("audio: loopback %d ch, %.0f Hz, %d bit, float=%v", ch, rate, bits, isFloat)
+	log.Printf("audio: %s, %d ch, %.0f Hz, %d bit, float=%v", label, ch, rate, bits, isFloat)
+	viz.setStatus("🎧 Écoute : " + label)
 
 	const N = 2048
 	ring := make([]float64, N)
@@ -139,7 +238,7 @@ func captureLoop(send func([]float64)) error {
 	lastSend := time.Now()
 	lastAudio := time.Now()
 
-	for viz.isEnabled() {
+	for viz.isEnabled() && !viz.mustRestart() {
 		var packet uint32
 		if hr := comCall(capture, 5, uintptr(unsafe.Pointer(&packet))); hr != 0 { // GetNextPacketSize
 			return errAudioInvalidate
@@ -191,8 +290,11 @@ func captureLoop(send func([]float64)) error {
 			}
 			send(out)
 		}
-		time.Sleep(8 * time.Millisecond)
+		if event != 0 {
+			windows.WaitForSingleObject(event, 50)
+		} else {
+			time.Sleep(8 * time.Millisecond)
+		}
 	}
 	return nil
 }
-
