@@ -290,7 +290,6 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		HIcon:         windows.Handle(icon),
 		HIconSm:       windows.Handle(icon),
 		LpfnWndProc:   windows.NewCallback(wndproc),
-		HbrBackground: bgBrush(),
 	}
 	_, _, _ = w32.User32RegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 
@@ -485,15 +484,4 @@ func (w *webview) Bind(name string, f interface{}) error {
 	})()`)
 
 	return nil
-}
-
-// bgBrush paints the native window with the WV2_BG color (RRGGBB) instead of white.
-func bgBrush() windows.Handle {
-	v, err := strconv.ParseUint(os.Getenv("WV2_BG"), 16, 32)
-	if err != nil {
-		return 0
-	}
-	colorref := (v>>16)&0xFF | (v & 0xFF00) | (v&0xFF)<<16 // RRGGBB -> 0x00BBGGRR
-	h, _, _ := windows.NewLazySystemDLL("gdi32.dll").NewProc("CreateSolidBrush").Call(uintptr(colorref))
-	return windows.Handle(h)
 }
