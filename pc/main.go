@@ -773,6 +773,9 @@ func main() {
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
 		"--autoplay-policy=no-user-gesture-required --disable-features=CalculateNativeWinOcclusion --disable-background-media-suspend --disable-renderer-backgrounding --disable-background-timer-throttling")
 
+	// no white flash at startup: windows start hidden and dark (patched go-webview2)
+	os.Setenv("WV2_START_HIDDEN", "1")
+	os.Setenv("WV2_BG", "0b0d1a")
 	wv = webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
 		AutoFocus: false,
