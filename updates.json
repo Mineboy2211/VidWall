@@ -1,9 +1,9 @@
 {
   "pc": {
-    "version": "1.9.2",
+    "version": "1.9.3",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallPC.exe",
-    "size": 7692800,
-    "notes": "- Corrige le fond qui ne s'affichait plus en 1.9.1"
+    "size": 7693824,
+    "notes": "- Corrige l'affichage cassé (fenêtre noire et blanche) de la 1.9.1/1.9.2\n- Toujours pas de flash blanc au lancement"
   },
   "home": {
     "version": "1.9.1",

@@ -334,9 +334,16 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 	)
 	setWindowContext(w.hwnd, w)
 
-	// patched for VidWall/BotConsole: the app shows the window itself, once it is ready
-	// (avoids the white flash while WebView2 starts)
-	if os.Getenv("WV2_START_HIDDEN") != "1" {
+	// patched for VidWall/BotConsole: WebView2 must be created in a *visible* window (otherwise it
+	// may never draw), but showing it on screen gives a white flash. So it is created visible but
+	// off-screen, then hidden and put back in place: the app shows it when it wants.
+	hidden := os.Getenv("WV2_START_HIDDEN") == "1"
+	var wr struct{ L, T, R, B int32 }
+	if hidden {
+		_, _, _ = getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&wr)))
+		_, _, _ = w32.User32SetWindowPos.Call(w.hwnd, 0, uintptr(^uint32(31999)), uintptr(^uint32(31999)), 0, 0, 0x0001|0x0004|0x0010) // -32000,-32000 NOSIZE|NOZORDER|NOACTIVATE
+		_, _, _ = w32.User32ShowWindow.Call(w.hwnd, 4)                                                                                 // SW_SHOWNOACTIVATE
+	} else {
 		_, _, _ = w32.User32ShowWindow.Call(w.hwnd, w32.SWShow)
 		_, _, _ = w32.User32UpdateWindow.Call(w.hwnd)
 		_, _, _ = w32.User32SetFocus.Call(w.hwnd)
@@ -346,6 +353,10 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		return false
 	}
 	w.browser.Resize()
+	if hidden {
+		_, _, _ = w32.User32ShowWindow.Call(w.hwnd, 0) // SW_HIDE
+		_, _, _ = w32.User32SetWindowPos.Call(w.hwnd, 0, uintptr(wr.L), uintptr(wr.T), 0, 0, 0x0001|0x0004|0x0010)
+	}
 	return true
 }
 
@@ -485,3 +496,5 @@ func (w *webview) Bind(name string, f interface{}) error {
 
 	return nil
 }
+
+var getWindowRect = windows.NewLazySystemDLL("user32.dll").NewProc("GetWindowRect")

@@ -15,7 +15,7 @@ import (
 
 // Updates are described by updates.json in the GitHub repo (see README there).
 const (
-	appVersion  = "1.9.2"
+	appVersion  = "1.9.3"
 	manifestURL = "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/updates.json"
 )
 
