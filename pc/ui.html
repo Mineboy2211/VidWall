@@ -771,6 +771,10 @@
   setInterval(() => { const ev = $('ev'); if (page === 'tools' && visible && ev.src) { if (ev.paused) ev.play().catch(()=>{}); } else ev.pause(); }, 500);
   window.addEventListener('resize', () => drawLogoBox());
   refresh();
+  // tells the app the page is drawn: the window appears and the loading screen fades out
+  // (load event + timer, not requestAnimationFrame: the window is still hidden at that point)
+  if (document.readyState === "complete") setTimeout(() => fetch("/api/do?a=uiReady").catch(() => {}), 60);
+  else window.addEventListener("load", () => setTimeout(() => fetch("/api/do?a=uiReady").catch(() => {}), 60));
 </script>
 </body>
 </html>

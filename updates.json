@@ -1,9 +1,9 @@
 {
   "pc": {
-    "version": "1.9.4",
+    "version": "1.9.5",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallPC.exe",
-    "size": 7693824,
-    "notes": "- Plus de fenêtre « VidWall » qui apparaît une fraction de seconde au lancement"
+    "size": 8110592,
+    "notes": "- Écran de chargement au lancement (fini le flash blanc)\n- La fenêtre des réglages apparaît seulement quand elle est prête"
   },
   "home": {
     "version": "1.9.1",

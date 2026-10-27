@@ -762,6 +762,15 @@ func main() {
 	pSetDpiCtx.Call(^uintptr(3)) // PER_MONITOR_AWARE_V2 (-4)
 	pSystemParametersInfo.Call(0x0073, uintptr(len(origWall)), uintptr(unsafe.Pointer(&origWall[0])), 0)
 
+	// loading screen right away (not when started with Windows or restarted by the guard)
+	if !background {
+		d, _, _ := pGetDpiForSystem.Call()
+		if d == 0 {
+			d = 96
+		}
+		showSplash(float64(d) / 96)
+	}
+
 	loadConfig()
 	log.Println("config", cfgPath, cfg.Video)
 	if cfg.Video != "" {
@@ -840,7 +849,16 @@ func main() {
 	}
 	createUI()
 	if !background || cfg.Video == "" {
-		showUI()
+		if splash != nil {
+			// the settings window appears when its page is ready (uiReady), then the loading screen fades out
+			pendingUI = true
+			go func() { // safety net
+				time.Sleep(12 * time.Second)
+				wv.Dispatch(func() { uiIsReady() })
+			}()
+		} else {
+			showUI()
+		}
 	}
 
 	log.Println("run loop")
@@ -1005,6 +1023,8 @@ func apiDo(a, k, v string, i int) {
 			job.cancel()
 		}
 		job.mu.Unlock()
+	case "uiReady":
+		uiIsReady()
 	case "dismissUpscale":
 		job.mu.Lock()
 		if !job.Running {
@@ -1232,4 +1252,14 @@ func watchPage() {
 		lastPing.Store(now.Unix())
 		wv.Navigate(fmt.Sprintf("http://127.0.0.1:%d/?r=%d", port, now.Unix()))
 	}
+}
+
+var pendingUI bool
+
+func uiIsReady() {
+	if pendingUI {
+		pendingUI = false
+		showUI()
+	}
+	closeSplash()
 }
