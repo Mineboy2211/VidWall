@@ -1,9 +1,9 @@
 {
   "pc": {
-    "version": "1.9.0",
+    "version": "1.9.1",
     "url": "https://raw.githubusercontent.com/Mineboy2211/VidWall/main/dist/VidWallPC.exe",
-    "size": 7685632,
-    "notes": "- VidWall se relance tout seul s'il se ferme (changement d'écran, redémarrage de l'explorateur…)\n- Le fond se recharge tout seul s'il devient blanc ou figé\n- Les plantages sont gardés dans log-precedent.txt"
+    "size": 7692800,
+    "notes": "- Plus de petite fenêtre blanche au lancement"
   },
   "home": {
     "version": "1.9.1",
